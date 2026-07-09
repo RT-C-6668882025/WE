@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,6 +9,16 @@ plugins {
 // 墨灵的大模型密钥/节点/模型名全部改为运行时由用户在 App 设置面板填写，
 // 存 SharedPreferences。构建产物（APK）内不含任何密钥，可放心开源。
 
+// —— 正式发布签名（可选，不影响开源构建）——
+// 维护者本机 ~/.moling/keystore.properties 存 release 签名配置（storeFile / storePassword /
+// keyAlias / keyPassword 四行），keystore 与密码都在 git 之外。文件存在 → release 构建用
+// 正式签名（官方发布、同签名可覆盖升级）；不存在（开源用户 clone 后的常态）→ 自动回退
+// debug 签名，assembleRelease 照样跑通，产物属自签测试包。
+val keystoreProps = Properties().apply {
+    val f = File(System.getProperty("user.home"), ".moling/keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.opc.baize"   // 源码包目录沿用 com.opc.baize（改名只动 applicationId，降编译风险）
     compileSdk = 34
@@ -15,11 +27,32 @@ android {
         applicationId = "com.opc.moling"   // 墨灵：对外应用标识
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
         // 可选的局域网降级识别通道默认地址：开源版留空，用户如自建 Mac 端 server.py
         // 可在设置里填（不填则纯走 ML Kit 本地识别 + 用户配置的大模型）。
         buildConfigField("String", "DEFAULT_FALLBACK_ASK_URL", "\"\"")
+    }
+
+    signingConfigs {
+        if (keystoreProps.isNotEmpty()) {
+            create("release") {
+                storeFile = File(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // 不开混淆：华为手写框架（HWEditView/EPDCDevice）全靠反射触达，
+            // 混淆误伤的风险远大于十几 MB 包体的收益。
+            isMinifyEnabled = false
+            signingConfig = if (keystoreProps.isNotEmpty()) signingConfigs.getByName("release")
+                else signingConfigs.getByName("debug")
+        }
     }
 
     buildFeatures {
