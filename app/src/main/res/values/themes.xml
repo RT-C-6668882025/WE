@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 暖纸底、无标题栏、全屏：与网页版一致的墨水屏观感 -->
+    <style name="Theme.Baize" parent="android:Theme.Material.Light.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:colorAccent">@color/inkDark</item>
+    </style>
+</resources>

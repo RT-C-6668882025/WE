@@ -1,0 +1,10 @@
+# 构建产物与本机配置一律不进 git（开源版无密钥注入，密钥由用户在 App 内运行时填写）
+build/
+app/build/
+.gradle/
+local.properties
+.idea/
+*.iml
+*.apk
+.DS_Store
+.kotlin/
