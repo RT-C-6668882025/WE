@@ -1,10 +1,12 @@
 <div align="center">
 
+**中文** · [English](README.en.md)
+
 # 墨灵（Moling）
 
 **一枚栖于墨水屏中的「墨中之灵」——手写提问，停笔片刻，答自现于纸上。**
 
-<img src="docs/01-device.jpg" alt="墨灵在墨水屏平板上的实拍" width="480">
+<img src="docs/01-device.jpg" alt="墨灵在墨水屏平板上的实拍" width="620">
 
 无输入框、无按钮，只有笔与纸。你在墨水屏上手写一个问题，墨灵识别你的字迹，
 再以浅近文言（半文半白、如古书批注）逐字将回答「写」在纸面上。
