@@ -3,7 +3,7 @@
     <application>
         <!-- Debug only: a separate test launcher; release manifest and MainActivity are unchanged. -->
         <activity android:name="com.opc.baize.subscription.SubscriptionProbeActivity"
-            android:exported="true" android:label="Moling 订阅验证"
+            android:exported="true" android:label="Moling 订阅诊断"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -15,7 +15,11 @@ import static com.opc.baize.subscription.SubscriptionProtocol.*;
 final class SubscriptionProbeClient implements Closeable {
     interface Browser { void open(String url); }
     private final SharedPreferences registration;
-    private volatile ServerSocket listener;
+    private volatile LoopbackReceiver listener;
+    private final ProbeDiagnostics diagnostics = new ProbeDiagnostics();
+    String diagnostics() { return diagnostics.snapshot(); }
+    String healthUrl() { LoopbackReceiver r = listener; return r == null ? null : r.healthUrl(); }
+    void beginOperation() { diagnostics.reset(); }
     private volatile HttpsURLConnection connection;
     private volatile boolean closed;
     private JSONObject discovery;
@@ -56,53 +60,31 @@ final class SubscriptionProbeClient implements Closeable {
         return discovery;
     }
     String signIn(Browser browser) throws Exception {
-        check(); JSONObject d = discover(); String host = hostId();
+        check(); diagnostics.mark(ProbeDiagnostics.Stage.DISCOVERY);
+        JSONObject d = discover(); String host = hostId();
         String state = random(), nonce = random(), verifier = random();
-        ServerSocket server = new ServerSocket(); listener = server;
-        server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 4);
-        server.setSoTimeout(1000);
-        String redirect = "http://127.0.0.1:" + server.getLocalPort() + "/auth/callback";
+        LoopbackReceiver receiver = new LoopbackReceiver(); listener = receiver;
+        String redirect = receiver.callbackUrl();
         try {
+            diagnostics.mark(ProbeDiagnostics.Stage.WAIT_CALLBACK);
             browser.open(authorize(d.getString("authorization_endpoint"), redirect, host, clientId, state, nonce, verifier));
-            Map<String, String> cb = waitCallback(server, state);
+            Map<String, String> cb = receiver.await(state, clientId, diagnostics);
             check();
             clientId = cb.get("client_id");
             // Save the non-secret issued registration before exchanging a one-use code.
             if (!registration.edit().putString("client_id", clientId).commit()) throw new Failure("registration_save_failed");
+            diagnostics.mark(ProbeDiagnostics.Stage.TOKEN_EXCHANGE);
             JSONObject result = json("POST", d.getString("token_endpoint"), form(fields(
                 "grant_type", "authorization_code", "client_id", clientId, "code", cb.get("code"),
                 "code_verifier", verifier, "redirect_uri", redirect, "resource", RESOURCE)),
                 "application/x-www-form-urlencoded", null);
             install(result, nonce, false);
+            diagnostics.mark(ProbeDiagnostics.Stage.AUTHORIZED);
             return hasDirectPermission() ? "身份与订阅权限验证通过；尚未验证模型请求。" : "身份验证通过，但未授权订阅调用。请重新授权或使用原模型接口。";
-        } finally { server.close(); if (listener == server) listener = null; }
-    }
-    private Map<String, String> waitCallback(ServerSocket server, String state) throws Exception {
-        long deadline = System.nanoTime() + 300_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            check();
-            try (Socket socket = server.accept()) {
-                socket.setSoTimeout(3000);
-                String line = boundedLine(socket.getInputStream(), 16384);
-                String[] request = line.split(" ");
-                Map<String, String> result = null; Failure failure = null;
-                try {
-                    if (request.length != 3 || !"GET".equals(request[0]) || !request[2].startsWith("HTTP/1.")) throw new Failure("invalid_callback_request");
-                    result = callback(request[1], state, clientId);
-                } catch (Failure e) { failure = e; }
-                  catch (Exception e) { failure = new Failure("invalid_callback_request"); }
-                String text = failure == null ? "Authorization received. Return to Moling to see verification results." : "Callback rejected. Return to Moling or retry sign-in.";
-                byte[] body = text.getBytes(StandardCharsets.UTF_8);
-                socket.getOutputStream().write(((failure == null ? "HTTP/1.1 200 OK" : "HTTP/1.1 400 Bad Request")
-                    + "\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\nContent-Length: " + body.length + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
-                socket.getOutputStream().write(body); socket.getOutputStream().flush();
-                if (failure == null) return result;
-                if (failure.code.equals("access_denied") || failure.code.equals("oauth_callback_error")) throw failure;
-            } catch (SocketTimeoutException ignored) { /* Continue accepting until overall deadline. */ }
-        }
-        throw new Failure("authorization_timeout");
+        } finally { receiver.close(); if (listener == receiver) listener = null; }
     }
     private void install(JSONObject result, String nonce, boolean refreshing) throws Exception {
+        diagnostics.mark(ProbeDiagnostics.Stage.VERIFY_IDENTITY);
         JSONObject claims;
         if (refreshing && !result.has("id_token") && subject != null) {
             // OAuth refresh can omit an ID token; the existing verified registration stays bound.
@@ -126,6 +108,7 @@ final class SubscriptionProbeClient implements Closeable {
         return session.getString("access_token");
     }
     List<String> models() throws Exception {
+        diagnostics.mark(ProbeDiagnostics.Stage.MODELS);
         JSONObject result = json("GET", RESOURCE + "/models", null, null, token());
         JSONArray models = result.getJSONArray("models"); List<String> slugs = new ArrayList<>();
         for (int i = 0; i < models.length(); i++) {
@@ -136,6 +119,7 @@ final class SubscriptionProbeClient implements Closeable {
         return slugs;
     }
     String inference(String model, String image) throws Exception {
+        diagnostics.mark(ProbeDiagnostics.Stage.INFERENCE);
         HttpsURLConnection c = open("POST", RESOURCE + "/responses", token());
         try {
             c.setRequestProperty("Accept", "text/event-stream");
@@ -156,6 +140,7 @@ final class SubscriptionProbeClient implements Closeable {
         } finally { c.disconnect(); connection = null; }
     }
     String refresh() throws Exception {
+        diagnostics.mark(ProbeDiagnostics.Stage.REFRESH);
         check();
         if (session == null || session.optString("refresh_token").isEmpty()) throw new Failure("sign_in_required");
         if (System.currentTimeMillis() < expiresAt - 60000) throw new Failure("refresh_not_due");
@@ -179,6 +164,7 @@ final class SubscriptionProbeClient implements Closeable {
         } catch (Exception e) { session = null; throw e; }
     }
     String signOut() {
+        diagnostics.mark(ProbeDiagnostics.Stage.REVOKE);
         JSONObject old = session; session = null;
         if (old == null || old.optString("refresh_token").isEmpty()) return "已清除本地会话；注册与 host ID 保留。";
         try {
@@ -230,20 +216,10 @@ final class SubscriptionProbeClient implements Closeable {
         while ((n = in.read(b)) != -1) { if (out.size() + n > limit) throw new Failure("body_too_large"); out.write(b, 0, n); }
         return out.toString("UTF-8");
     }
-    static String boundedLineOrNull(InputStream in, int limit) throws Exception {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(); int b;
-        while ((b = in.read()) != -1 && b != '\n') {
-            if (out.size() >= limit) throw new Failure("line_too_large"); out.write(b);
-        }
-        if (b == -1 && out.size() == 0) return null;
-        String line = out.toString("UTF-8"); return line.endsWith("\r") ? line.substring(0, line.length() - 1) : line;
-    }
-    private static String boundedLine(InputStream in, int limit) throws Exception {
-        String line = boundedLineOrNull(in, limit); if (line == null) throw new Failure("empty_callback_request"); return line;
-    }
+    static String boundedLineOrNull(InputStream in, int limit) throws Exception { return LoopbackReceiver.line(in, limit); }
     @Override public void close() {
         closed = true; session = null;
         HttpsURLConnection c = connection; if (c != null) c.disconnect();
-        ServerSocket s = listener; if (s != null) try { s.close(); } catch (IOException ignored) {}
+        LoopbackReceiver s = listener; if (s != null) try { s.close(); } catch (IOException ignored) {}
     }
 }

@@ -10,35 +10,40 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Verify tested source and download existing APK
+      - name: Wait for exact source build and download APK
         shell: bash
         run: |
           set -euo pipefail
-          test "$(gh api repos/$GH_REPO/actions/runs/40693423075 --jq .conclusion)" = success
-          test "$(gh api repos/$GH_REPO/actions/runs/40693423075 --jq .head_sha)" = 35906bc16f81008e71405935c75b6fb26ce7dac0
-          gh run download 40693423075 --name moling-subscription-probe-debug --dir apk
+          for attempt in $(seq 1 12); do
+            RUN_ID=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$GITHUB_SHA&per_page=20" --jq '.workflow_runs[] | select(.path == ".github/workflows/subscription-probe.yml" and .event == "push") | .id' | head -n 1)
+            if test -n "$RUN_ID"; then break; fi
+            sleep 5
+          done
+          test -n "$RUN_ID"
+          gh run watch "$RUN_ID" --exit-status
+          test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$GITHUB_SHA"
+          gh run download "$RUN_ID" --name moling-subscription-probe-debug --dir apk
           test -f apk/app-debug.apk
-          mv apk/app-debug.apk apk/Moling-Subscription-Probe-v0.1.0.apk
+          mv apk/app-debug.apk apk/Moling-Subscription-Probe-v0.1.1.apk
           cd apk
-          sha256sum Moling-Subscription-Probe-v0.1.0.apk > SHA256SUMS.txt
-      - name: Publish prerelease with direct APK asset
+          sha256sum Moling-Subscription-Probe-v0.1.1.apk > SHA256SUMS.txt
+      - name: Publish diagnostics prerelease
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          Android 订阅最小验证版，独立包名，可与正式墨灵共存。
-          下载 APK 后直接安装，打开「Moling 订阅验证」，依次测试登录、模型列表、文本和图片请求。
-          已通过单测、lint、debug/release 构建。真实设备 OAuth 与订阅调用仍待验证，非正式 Provider。
-          令牌仅存内存，关闭验证页后需重新登录。
-          源码：35906bc16f81008e71405935c75b6fb26ce7dac0
-          构建：https://github.com/RT-C-6668882025/WE/actions/runs/40693423075
+          Android 授权诊断 v0.1.1，独立包名，可与正式版和旧测试版共存。
+          登录卡住时切回「Moling 订阅诊断」，查看当前阶段，并点击「测试浏览器到本机回调的连通性」。
+          诊断区分等待回调、收到回调、令牌交换、身份验证；不会记录授权码或令牌。
+          已通过协议检查、真实本机套接字测试、Android 单测、lint 及 debug/release 构建。
+          真实用户订阅授权仍待验证。本版本提供诊断能力，不宣称已修复授权服务。
           NOTES
-          gh release create v0.1.0-subscription-probe \
-            apk/Moling-Subscription-Probe-v0.1.0.apk apk/SHA256SUMS.txt \
-            --target 35906bc16f81008e71405935c75b6fb26ce7dac0 \
-            --prerelease --title "Moling 订阅验证 v0.1.0" --notes-file release-notes.md
+          printf '\nSource: %s\n' "$GITHUB_SHA" >> release-notes.md
+          gh release create v0.1.1-subscription-probe \
+            apk/Moling-Subscription-Probe-v0.1.1.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "Moling 订阅诊断 v0.1.1" --notes-file release-notes.md

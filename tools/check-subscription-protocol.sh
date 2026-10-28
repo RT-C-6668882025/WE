@@ -11,5 +11,9 @@ java com.sun.tools.javac.Main -d "$probe_classes" \
   "$JSON_JAVA_SOURCE"/org/json/*.java \
   "$probe_root"/app/src/debug/java/com/opc/baize/subscription/SubscriptionProtocol.java \
   "$probe_root"/app/src/debug/java/com/opc/baize/subscription/IdentityVerifier.java \
+  "$probe_root"/app/src/debug/java/com/opc/baize/subscription/ProbeDiagnostics.java \
+  "$probe_root"/app/src/debug/java/com/opc/baize/subscription/LoopbackReceiver.java \
+  "$probe_root"/app/src/testDebug/java/com/opc/baize/subscription/LoopbackChecks.java \
   "$probe_root"/app/src/testDebug/java/com/opc/baize/subscription/ProtocolChecks.java
 java -cp "$probe_classes" com.opc.baize.subscription.ProtocolChecks
+java -cp "$probe_classes" com.opc.baize.subscription.LoopbackChecks

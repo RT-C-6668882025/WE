@@ -21,6 +21,15 @@ public final class SubscriptionProbeActivity extends Activity {
     private ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<Button> actions = new ArrayList<>();
     private TextView output;
+    private final android.os.Handler heartbeat = new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean busy;
+    private final Runnable monitor = new Runnable() {
+        @Override public void run() {
+            if (destroyed) return;
+            if (busy) show(client.diagnostics());
+            heartbeat.postDelayed(this, 500);
+        }
+    };
     private Spinner models;
     private List<String> catalog = new ArrayList<>();
     private volatile int generation;
@@ -32,7 +41,7 @@ public final class SubscriptionProbeActivity extends Activity {
         client = new SubscriptionProbeClient(this);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(24, 24, 24, 24);
         ScrollView scroll = new ScrollView(this); scroll.addView(root); setContentView(scroll);
-        TextView title = new TextView(this); title.setText("Moling · 订阅最小验证（实验）"); title.setTextSize(23); root.addView(title);
+        TextView title = new TextView(this); title.setText("Moling · 订阅诊断 v0.1.1"); title.setTextSize(23); root.addView(title);
         TextView description = new TextView(this);
         description.setText("仅 debug 包。使用当前 ChatGPT 账号授权，测试请求会使用订阅额度。令牌只在内存；退出页面或进程结束后需重新登录。此页不改变墨灵的书写或原模型接口。\n按顺序执行：登录 → 模型列表 → 文本 → 图片。每项显示结果才算通过；这不是正式 Provider。\n当前只保留一个注册；重新授权需使用原账号/工作区。切换账号需清除此验证注册（卸载测试 App），生产版后续另做多账号管理。");
         root.addView(description);
@@ -82,22 +91,31 @@ public final class SubscriptionProbeActivity extends Activity {
             models.setAdapter(null); enable(true);
             show("在途操作已取消，本地内存令牌已清除；远端授权未撤销，可到 ChatGPT 设置中断开。注册与 host ID 保留。");
         });
+        Button health = new Button(this); health.setText("测试浏览器到本机回调的连通性"); root.addView(health);
+        health.setOnClickListener(v -> {
+            String url = client.healthUrl();
+            if (url == null) { show("请先点击登录。此测试仅在等待授权期间可用。"); return; }
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
+            catch (Exception e) { show("无法打开浏览器。"); }
+        });
         Button usage = new Button(this); usage.setText("Manage usage · ChatGPT 用量设置"); root.addView(usage);
         usage.setOnClickListener(v -> {
-            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/#settings/Usage"))); }
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/settings/usage"))); }
             catch (Exception e) { show("无法打开浏览器，请手动进入 ChatGPT 设置 → 用量。"); }
         });
         output = new TextView(this); output.setTextIsSelectable(true); output.setTextSize(16); root.addView(output);
-        show("待验证。没有发生订阅请求。完成浏览器授权后，请切回此页查看结果。");
+        show("待验证。登录卡住时切回此页查看阶段，并点击本机回调连通测试。不要关闭原授权标签页。");
+        heartbeat.post(monitor);
     }
     private String selected() { return catalog.isEmpty() || models.getSelectedItem() == null ? "" : models.getSelectedItem().toString(); }
     private void button(LinearLayout root, String label, Task task) {
         Button b = new Button(this); b.setText(label); root.addView(b); actions.add(b); b.setOnClickListener(v -> execute(task));
     }
-    private void enable(boolean value) { for (Button b : actions) b.setEnabled(value); models.setEnabled(value); }
+    private void enable(boolean value) { busy = !value; for (Button b : actions) b.setEnabled(value); models.setEnabled(value); }
     private void show(String value) { output.setText(value); }
     private void execute(Task task) {
         SubscriptionProbeClient owner = client;
+        owner.beginOperation();
         int attempt = ++generation; enable(false); show("验证中……如已打开授权浏览器，请完成后切回此页。");
         worker.execute(() -> {
             String result;
@@ -111,7 +129,7 @@ public final class SubscriptionProbeActivity extends Activity {
                 result = "未通过：网络、响应格式或身份验证异常（" + e.getClass().getSimpleName() + "）。未保存或输出令牌，请取消后重试。";
             }
             final String done = result;
-            runOnUiThread(() -> { if (!destroyed && attempt == generation) { enable(true); show(done); } });
+            runOnUiThread(() -> { if (!destroyed && attempt == generation) { enable(true); show(done + "\n\n" + owner.diagnostics()); } });
         });
     }
     private static String fixture() {
@@ -125,6 +143,6 @@ public final class SubscriptionProbeActivity extends Activity {
         } finally { b.recycle(); }
     }
     @Override public void onDestroy() {
-        destroyed = true; generation++; client.close(); worker.shutdownNow(); super.onDestroy();
+        destroyed = true; heartbeat.removeCallbacksAndMessages(null); generation++; client.close(); worker.shutdownNow(); super.onDestroy();
     }
 }

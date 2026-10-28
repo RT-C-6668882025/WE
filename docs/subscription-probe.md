@@ -74,3 +74,36 @@ GitHub Actions `Subscription probe` 会在 `probe/subscription-native` 分支和
 - https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
 - https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions
 - https://github.com/openai/sign-in-with-chatgpt-devkit/tree/0a36fefeb913055c8c7a1a29b63d82b96b2e841a
+
+## v0.1.1：授权停留诊断
+
+包名为 `com.opc.moling.subscriptionprobe.diag`，入口为「Moling 订阅诊断」，可与旧验证版和正式墨灵共存。独立测试 APK 的 CI 签名不作为生产更新签名承诺。
+
+授权过程中每半秒显示固定阶段、经过秒数、回调次数、被拒绝请求次数与本机连通测试结果。不保存 URL、授权码或令牌。卡住时切回诊断页即可查看状态。
+
+| 观察结果 | 能得出的结论 |
+|---|---|
+| 等待浏览器授权回调，回调 0 次 | App 还没有看到授权回调，尚未开始令牌交换 |
+| 点击本机连通测试，浏览器显示 MOLING_CALLBACK_OK | 该浏览器能够访问该设备上仍在运行的监听端口；不代表官方授权成功 |
+| 连通测试成功但官方回调仍为 0 | 继续查授权页提交、浏览器重定向或账号/工作区；不能仅凭此断言服务端故障 |
+| 回调次数增加且出现拒绝 | 已到本机，检查状态/参数/Host 校验及授权尝试是否已过期 |
+| 向官方服务换取令牌 | 已收到并校验回调，阻塞发生在 App 到官方 token endpoint 的请求 |
+| 下载公钥并验证身份 | token exchange 已返回，继续检查 JWKS/身份校验 |
+
+新增本机回调测试入口只在 OAuth 监听期间可用，不消耗授权尝试。它没有授权能力、也不改变 PKCE/state/nonce 校验。测试后回到原授权标签页继续；不要复制或重用旧授权 URL。
+
+本轮在 JDK 上通过 42 项协议断言和 10 项实际回环套接字检查（合成凭据），包括 health 请求、错误 state、错误 Host、正确 callback 和取消；这些测试不访问 OpenAI，也不是 Android 设备授权结论。
+
+### 官方 DevKit 对照
+
+`tools/devkit-auth-control.mjs` 调用用户另行安装的官方 checkout 中原始 `packages/local/dist/oauth.js`，不修改或随本仓库分发 DevKit 源码。此脚本只测授权；不发送模型推理，令牌仅在内存，结束后尝试撤销临时会话。仅将非秘密 host/client/verified subject 注册元数据保存在运行设备的用户配置目录。
+
+它使用 OAuth 模块而非持久化 SDK store，因此不建立不受保护的 SDK 凭据存储。完整 SDK 的 OS-backed encryption 要求仍适用于生产接入。该内部模块路径按本次 DevKit commit 固定审查，不是稳定公共 API 承诺。
+
+在有系统浏览器的同一设备上，按官方仓库说明先安装依赖并构建 `@siwc/local`，再运行：
+
+```
+node tools/devkit-auth-control.mjs /absolute/path/to/sign-in-with-chatgpt-devkit
+```
+
+`--check` 仅验证模块可导入；本轮该检查已通过。这里的云端浏览器与 SDK 进程的本机网络不相通，打开探针监听端口得到 ERR_CONNECTION_REFUSED，因此没有发起会产生无效回调对照的真实账号授权。**同账号官方 DevKit 真实授权仍未完成**，必须在浏览器和 SDK 共享 loopback 的设备上进行。
