@@ -124,8 +124,12 @@ final class SubscriptionProbeClient implements Closeable {
         return slugs;
     }
     String inference(String model, String image) throws Exception {
+        return reply(request(model, image));
+    }
+    String reply(JSONObject requestBody) throws Exception {
         diagnostics.mark(ProbeDiagnostics.Stage.INFERENCE);
-        try (Response response = http.execute("POST", RESOURCE + "/responses", request(model, image).toString(),
+        if (session != null && System.currentTimeMillis() >= expiresAt - 30000) refresh();
+        try (Response response = http.execute("POST", RESOURCE + "/responses", requestBody.toString(),
                 "application/json", token(), "text/event-stream")) {
             requireSuccess(response);
             String type = response.header("Content-Type");

@@ -6,6 +6,9 @@ on:
   pull_request:
     paths:
       - "app/src/debug/**"
+      - "app/src/main/**"
+      - "app/src/test/**"
+      - "app/build.gradle.kts"
       - "app/src/testDebug/java/com/opc/baize/subscription/**"
       - ".github/workflows/subscription-probe.yml"
 permissions:

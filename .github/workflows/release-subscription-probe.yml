@@ -29,23 +29,22 @@ jobs:
           test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" --name moling-subscription-probe-debug --dir apk
           test -f apk/app-debug.apk
-          mv apk/app-debug.apk apk/Moling-Subscription-Probe-v0.1.4.apk
+          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.2.0.apk
           cd apk
-          sha256sum Moling-Subscription-Probe-v0.1.4.apk > SHA256SUMS.txt
+          sha256sum Moling-AI-Paper-v0.2.0.apk > SHA256SUMS.txt
       - name: Publish diagnostics prerelease
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          Android 授权诊断 v0.1.4，独立包名，可与正式版和旧测试版共存。
-          参考官方 DevKit 的公钥缓存设计，增加授权前公钥预取、10 分钟内存缓存及未知签名 key ID 时的一次更新。
-          先确认公钥下载可用，再打开浏览器；缓存命中时，授权完成后无需再次建连下载公钥。
-          保留完整验签；签名、账号、nonce、受众错误不会绕过。第三方候选代码审计见 docs/subscription-candidates.md。
-          授权码与刷新令牌请求不自动重试。诊断只显示固定错误码，不记录凭据或请求体。
-          已通过协议检查、真实本机套接字测试、Android 单测、lint 及 debug/release 构建。
-          真实用户订阅授权仍待验证。本版本提供诊断能力，不宣称已修复授权服务。
+          墨灵 AI Paper v0.2.0：将实机全部验证通过的官方订阅通道接入墨灵主程序。
+          设置 → ChatGPT 登录与模型选择 → 登录 → 使用所选模型 → 返回墨灵书写提问。
+          支持 ModelProvider 切换，保留原 Anthropic 兼容 API、手写识别和历史；不自动跨通道计费。
+          令牌仅存内存，进程退出后重新登录；订阅请求携带最近六轮本地历史。
+          当前为可回退集成版，与旧版本共存；PDF、Drive/Room、Agent 尚未接入。
+          构建与单测通过后由工作流发布；需真机确认主界面手写应答。
           NOTES
           printf '\nSource: %s\n' "$GITHUB_SHA" >> release-notes.md
-          gh release create v0.1.4-subscription-probe \
-            apk/Moling-Subscription-Probe-v0.1.4.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "Moling 订阅诊断 v0.1.4" --notes-file release-notes.md
+          gh release create v0.2.0-ai-paper \
+            apk/Moling-AI-Paper-v0.2.0.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.2.0" --notes-file release-notes.md

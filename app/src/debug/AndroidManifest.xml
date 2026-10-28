@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application>
-        <!-- Debug only: a separate test launcher; release manifest and MainActivity are unchanged. -->
+    <application android:label="墨灵 AI Paper">
         <activity android:name="com.opc.baize.subscription.SubscriptionProbeActivity"
-            android:exported="true" android:label="Moling 订阅公钥预取"
-            android:configChanges="orientation|screenSize|keyboardHidden">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
     </application>
 </manifest>

@@ -25,6 +25,11 @@ import com.opc.baize.core.SessionMemory
 import com.opc.baize.core.Texts
 import com.opc.baize.core.Turn
 import com.opc.baize.core.TouchGate
+import com.opc.baize.model.AnthropicModelProvider
+import com.opc.baize.model.SubscriptionModelProvider
+import com.opc.baize.model.ModelProvider
+import com.opc.baize.subscription.SubscriptionGateway
+import com.opc.baize.subscription.SubscriptionSettingsActivity
 import com.opc.baize.net.DeepSeekClient
 import com.opc.baize.net.FallbackClient
 import com.opc.baize.net.MlKitRecognizer
@@ -199,7 +204,7 @@ class MainActivity : Activity() {
     private fun showFirstRunGuide() {
         AlertDialog.Builder(this)
             .setTitle("欢迎使用墨灵")
-            .setMessage("墨灵是一枚栖于墨水屏中的墨中之灵。\n\n请先配置大模型 API，方能应答手写之问。")
+            .setMessage("墨灵是一枚栖于墨水屏中的墨中之灵。\n\n请先在设置中登录 ChatGPT 订阅或配置原 API，方能应答手写之问。")
             .setPositiveButton("去设置") { _, _ ->
                 prefs.edit().putBoolean("firstRunDone", true).apply()
                 showPanel(TAB_SETTINGS)
@@ -216,8 +221,11 @@ class MainActivity : Activity() {
         if (hasFocus) applyImmersive()
     }
 
+    private var providerSelector: android.widget.Spinner? = null
+
     override fun onResume() {
         super.onResume()
+        providerSelector?.setSelection(if (prefs.getString("model_provider", "anthropic") == "subscription") 1 else 0)
         // 回前台：HWEditView 重新进手写态，恢复驱动直写（onPause 时已退出）。
         hwLayer?.enterHandwriteState()
         // 直写模式：回前台启动轮询停笔检测（onPause 已停）。
@@ -726,11 +734,14 @@ class MainActivity : Activity() {
         }
 
         // —— 大模型未配置：兜底提示，不烧请求、不崩 ——
-        val cfg = modelConfig()
-        if (!cfg.isReady()) {
+        val subscription = prefs.getString("model_provider", "anthropic") == "subscription"
+        val provider: ModelProvider = if (subscription) SubscriptionModelProvider(
+            SubscriptionGateway.get(this), prefs.getString("subscription_model", "") ?: ""
+        ) else AnthropicModelProvider(modelConfig())
+        if (!provider.isReady()) {
             ui.post { blinkSealTwice() }   // 印章闪两下，提示去设置填 API
             uiWriteAndWait { done ->
-                book.writeAnimated("fail", ModelConfig.NOT_CONFIGURED_TIP, false, done)
+                book.writeAnimated("fail", if (subscription) "请在设置中登录 ChatGPT 并选择订阅模型。" else ModelConfig.NOT_CONFIGURED_TIP, false, done)
             }
             return
         }
@@ -742,7 +753,7 @@ class MainActivity : Activity() {
         // —— 回显 + 大模型文言回复（重试 1 次） ——
         ui.post { book.appendInstant("you", "你写道：$recognized") }
         val reply = try {
-            deepseek.reply(cfg, memory.history(), recognized)
+            provider.reply(memory.history(), recognized)
         } catch (t: Throwable) {
             uiWriteAndWait { done -> failOnPage(done) }
             return
@@ -1122,6 +1133,21 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
+        col.addView(sectionTitle("模型通道"))
+        val providerChoices = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("原 API（Anthropic 兼容）", "ChatGPT 订阅"))
+            setSelection(if (prefs.getString("model_provider", "anthropic") == "subscription") 1 else 0)
+        }
+        providerSelector = providerChoices
+        col.addView(providerChoices)
+        col.addView(android.widget.Button(this).apply {
+            text = "ChatGPT 登录与模型选择"
+            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, SubscriptionSettingsActivity::class.java)) }
+        })
+        col.addView(hint("订阅会话仅在本次进程中保留。切换原 API 后沿用下方配置，不自动跨通道扣费。"))
+        gap(12f)
+
         // (b) 大模型 API 设置
         col.addView(sectionTitle("大模型 API"))
         gap(8f)
@@ -1195,6 +1221,7 @@ class MainActivity : Activity() {
             text = "保存"
             setOnClickListener {
                 prefs.edit()
+                    .putString("model_provider", if (providerChoices.selectedItemPosition == 1) "subscription" else "anthropic")
                     .putString("api_key", keyEdit.text.toString().trim())
                     .putString("api_endpoint", endpointEdit.text.toString().trim()
                         .ifEmpty { ModelConfig.DEFAULT_ENDPOINT })
