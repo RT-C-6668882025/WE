@@ -1133,6 +1133,10 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
+        col.addView(android.widget.Button(this).apply {
+            text = "PDF 练习工作区"
+            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, com.opc.baize.paper.PaperActivity::class.java)) }
+        })
         col.addView(sectionTitle("模型通道"))
         val providerChoices = android.widget.Spinner(this).apply {
             adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
