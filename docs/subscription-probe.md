@@ -123,3 +123,8 @@ node tools/devkit-auth-control.mjs /absolute/path/to/sign-in-with-chatgpt-devkit
 主机验证：42 项协议检查、10 项回环套接字检查、10 项安全异常分类检查、6 项真实 OkHttp 到本地合成 HTTP 服务的检查通过。后者验证连续请求确实使用不同 TCP 连接，以及服务端在收到 POST 后断开时只发送一次、不自动重放。全部新增 debug Java 对 Android 34 接口编译通过。完整 Android 单测/lint/APK 构建以当前提交 CI 为准；实际账号换令牌是否恢复仍待设备验证。
 
 可选主机网络测试：给 `tools/check-subscription-protocol.sh` 设置 `OKHTTP_TEST_CLASSPATH`，使用以冒号连接的 okhttp、okio-jvm 和 kotlin-stdlib jar 路径。Gradle 中的 debug 单测会直接使用声明的依赖。Apache 授权及归属信息随 debug APK 的 subscription-network-licenses 资源提供。
+
+
+## v0.1.3 公钥连接恢复
+实机日志显示授权回调通过、令牌端点 HTTP 200，随后 JWKS 公钥下载发生 TLS 握手失败。这不能证明订阅调用已通过，也无法仅据此确定是代理、网络链路或服务端原因。
+公开配置 GET 增加最多两次新连接重试；取消及证书校验失败立即停止。POST 授权码、刷新、推理均不重放，身份签名验证保持不变。真实订阅模型请求仍待用户实机验证。

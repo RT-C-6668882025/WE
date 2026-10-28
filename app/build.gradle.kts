@@ -48,8 +48,8 @@ android {
     buildTypes {
         debug {
             // Isolate the subscription probe from an installed production Moling.
-            applicationIdSuffix = ".subscriptionprobe.netdiag"
-            versionNameSuffix = "-probe.0.1.2"
+            applicationIdSuffix = ".subscriptionprobe.jwksretry"
+            versionNameSuffix = "-probe.0.1.3"
         }
         release {
             // 不开混淆：华为手写框架（HWEditView/EPDCDevice）全靠反射触达，

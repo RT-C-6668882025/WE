@@ -43,10 +43,20 @@ final class ProbeHttp implements java.io.Closeable {
         if (bearer != null) request.header("Authorization", "Bearer " + bearer);
         RequestBody bytes = body == null ? null : RequestBody.create(body.getBytes(java.nio.charset.StandardCharsets.UTF_8), MediaType.get(type));
         request.method(method, bytes);
-        Call call = client.newCall(request.build()); active = call;
-        if (closed) call.cancel();
-        try { return call.execute(); }
-        catch (IOException e) { throw failure(e); }
+        // Only read-only public metadata GETs may be retried. Never replay token grants or inference.
+        int attempts = "GET".equals(method) && bearer == null && body == null ? 3 : 1;
+        for (int attempt = 1; ; attempt++) {
+            if (closed || Thread.currentThread().isInterrupted()) throw new Failure("cancelled");
+            Call call = client.newCall(request.build()); active = call;
+            if (closed) call.cancel();
+            try { return call.execute(); }
+            catch (IOException e) {
+                String code = NetworkErrors.code(e, closed);
+                if (attempt >= attempts || "cancelled".equals(code) || "tls_certificate_rejected".equals(code))
+                    throw failure(e);
+                note("公开配置读取失败；使用新连接重试 " + attempt + "/2");
+            }
+        }
     }
     Failure failure(IOException error) { return new Failure(NetworkErrors.code(error, closed)); }
     @Override public void close() {

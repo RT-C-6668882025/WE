@@ -52,6 +52,19 @@ public final class ProbeHttpChecks {
                 yes(connections.get() == 2);
                 yes(d.snapshot().contains("收到 HTTP 200"));
             }
+            try (ServerSocket server = new ServerSocket(0, 4, InetAddress.getByName("127.0.0.1")); ProbeHttp http = new ProbeHttp(new ProbeDiagnostics())) {
+                server.setSoTimeout(3000);
+                Future<?> peer = workers.submit(() -> {
+                    try {
+                        try (Socket first = server.accept()) { first.setSoTimeout(3000); consume(first); }
+                        try (Socket second = server.accept()) { second.setSoTimeout(3000); consume(second); reply(second); }
+                    } catch (Exception e) { throw new RuntimeException(e); }
+                });
+                try (Response response = http.execute("GET", "http://127.0.0.1:" + server.getLocalPort() + "/jwks", null, null, null, "application/json")) {
+                    yes(response.code() == 200 && response.body().string().equals("{}"));
+                }
+                peer.get(5, TimeUnit.SECONDS);
+            }
             AtomicInteger received = new AtomicInteger();
             try (ServerSocket server = new ServerSocket(0, 4, InetAddress.getByName("127.0.0.1")); ProbeHttp http = new ProbeHttp(new ProbeDiagnostics())) {
                 server.setSoTimeout(1000);
