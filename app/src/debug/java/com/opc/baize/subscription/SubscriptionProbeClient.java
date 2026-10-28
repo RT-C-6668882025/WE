@@ -111,17 +111,11 @@ final class SubscriptionProbeClient implements Closeable {
             claims = IdentityVerifier.verify(result.getString("id_token"),
                 json("GET", discover().getString("jwks_uri"), null, null, null), clientId, nonce, subject, System.currentTimeMillis() / 1000);
         }
-        String scopes = result.optString("scope", refreshing && session != null ? session.getString("scope") : "");
-        if (scopes.isEmpty()) throw new Failure("missing_granted_scopes");
+        validateTokenFields(result, session, refreshing);
         long ttl = result.optLong("expires_in", 0);
-        if (ttl <= 0 || ttl > 604800 || !"bearer".equalsIgnoreCase(result.optString("token_type"))
-            || result.optString("access_token").isEmpty()) throw new Failure("invalid_token_response");
-        String refresh = result.optString("refresh_token", refreshing && session != null ? session.optString("refresh_token") : "");
-        if (hasScope(scopes, "offline_access") && refresh.isEmpty()) throw new Failure("missing_refresh_token");
         check();
         String nextSubject = claims.getString("sub");
         if (!registration.edit().putString("subject", nextSubject).commit()) throw new Failure("registration_save_failed");
-        result.put("scope", scopes).put("refresh_token", refresh);
         subject = nextSubject; session = result; expiresAt = System.currentTimeMillis() + ttl * 1000;
     }
     boolean hasDirectPermission() { return session != null && hasScope(session.optString("scope"), DIRECT_SCOPE) && hasScope(session.optString("scope"), "resource.invoke"); }

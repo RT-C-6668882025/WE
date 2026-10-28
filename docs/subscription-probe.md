@@ -59,9 +59,10 @@ GitHub Actions `Subscription probe` 会在 `probe/subscription-native` 分支和
 ## 当前证据
 
 - DevKit 自带本地测试：57 通过，非真实账号测试。
-- 原生协议：36 项离线断言通过，包括 RFC7636 challenge、callback/CSRF、scope、图像请求体、SSE 截断与失败、JWKS 验签、nonce/audience/subject/expiry/算法/篡改拒绝。
+- 原生协议：42 项离线断言通过，包括 RFC7636 challenge、callback/CSRF、scope、图像请求体、SSE 截断与失败、JWKS 验签、nonce/audience/subject/expiry/算法/篡改拒绝。
 - 全部新增 debug Java 源文件已用 Android 34 android.jar 编译检查通过；这不替代 Gradle/D8/lint/APK 构建。
-- 本机 Gradle wrapper 下载在此前因网络不可达失败，完整 APK 结果以 Actions 实际运行结论为准。
+- CI 已在 commit `1226df7c954e32cf999d7641aad2450a6f175275` 完成原单测、协议单测、lint、debug/release 构建，结果为 BUILD SUCCESSFUL；后续修正以当前分支最新 Actions 为准。
+- 官方 OIDC discovery 实际连通且端点契约检查通过（无账号、无令牌请求）。
 - **真实 Android OAuth、账号订阅资格、模型文本/图片调用、刷新和撤销仍待设备实测。不能标记为完成。**
 
 主机复现协议检查：设置 `JSON_JAVA_SOURCE` 指向 JSON-java checkout 的 `src/main/java`，运行 `bash tools/check-subscription-protocol.sh`。本次主机临时测试使用 JSON-java commit `9926542da15fc2d4bf917d744439c5617a5a1650`；不将该源码或 jar 随应用分发。Gradle 单测使用项目原有的 org.json 测试依赖。

@@ -87,6 +87,28 @@ public final class SubscriptionProtocol {
         for (String s : scope.split("\\s+")) if (s.equals(wanted)) return true;
         return false;
     }
+    public static JSONObject validateTokenFields(JSONObject result, JSONObject previous, boolean refreshing) throws Exception {
+        Object granted = result.opt("scope");
+        if (granted == null && refreshing && previous != null) granted = previous.opt("scope");
+        if (!(granted instanceof String) || ((String) granted).trim().isEmpty()) throw new Failure("missing_granted_scopes");
+        String scopes = (String) granted;
+        Object access = result.opt("access_token");
+        boolean hasAccess = access instanceof String && !((String) access).isEmpty();
+        if (hasAccess) {
+            Object ttl = result.opt("expires_in");
+            if (!(ttl instanceof Number) || ((Number) ttl).doubleValue() != ((Number) ttl).longValue()
+                || ((Number) ttl).longValue() <= 0 || ((Number) ttl).longValue() > 604800
+                || !"bearer".equalsIgnoreCase(result.optString("token_type"))) throw new Failure("invalid_token_response");
+        } else if (refreshing || hasScope(scopes, DIRECT_SCOPE) || hasScope(scopes, "resource.invoke") || hasScope(scopes, "offline_access")) {
+            throw new Failure("invalid_token_response");
+        } else if (access != null && access != JSONObject.NULL) throw new Failure("invalid_token_response");
+        Object refresh = result.opt("refresh_token");
+        if (refresh == null && refreshing && previous != null) refresh = previous.opt("refresh_token");
+        if (refresh != null && !(refresh instanceof String)) throw new Failure("invalid_token_response");
+        String renewable = refresh instanceof String ? (String) refresh : "";
+        if (hasScope(scopes, "offline_access") && renewable.isEmpty()) throw new Failure("missing_refresh_token");
+        return result.put("scope", scopes).put("refresh_token", renewable);
+    }
     public static JSONObject request(String model, String imageUrl) throws Exception {
         if (model.isEmpty()) throw new Failure("model_required");
         JSONArray content = new JSONArray().put(new JSONObject().put("type", "input_text")

@@ -46,6 +46,17 @@ public final class ProtocolChecks {
         fails("access_denied",()->callback("/auth/callback?state=s&error=access_denied","s",""));
         fails("state_mismatch",()->callback("/auth/callback?state=x&error=access_denied","s",""));
         yes(hasScope("openid "+DIRECT_SCOPE,DIRECT_SCOPE) && !hasScope(DIRECT_SCOPE+".evil",DIRECT_SCOPE));
+        JSONObject identityOnly = validateTokenFields(new JSONObject().put("scope", "openid profile email"), null, false);
+        yes(!hasScope(identityOnly.getString("scope"), DIRECT_SCOPE) && !identityOnly.has("access_token"));
+        fails("invalid_token_response", () -> validateTokenFields(new JSONObject().put("scope", DIRECT_SCOPE), null, false));
+        fails("missing_granted_scopes", () -> validateTokenFields(new JSONObject(), null, false));
+        JSONObject original = new JSONObject().put("scope", SCOPES).put("access_token", "test-only")
+            .put("refresh_token", "test-refresh").put("token_type", "Bearer").put("expires_in", 3600);
+        yes(validateTokenFields(original, null, false).getString("refresh_token").equals("test-refresh"));
+        JSONObject renewed = new JSONObject().put("access_token", "test-successor").put("token_type", "Bearer").put("expires_in", 3600);
+        yes(validateTokenFields(renewed, original, true).getString("scope").equals(SCOPES));
+        fails("invalid_token_response", () -> validateTokenFields(new JSONObject().put("scope", SCOPES)
+            .put("access_token", 123).put("expires_in", 3600).put("token_type", "Bearer"), null, false));
         JSONObject request=request("account-model",null);
         yes(!request.getBoolean("store") && request.getBoolean("stream") && request.get("input") instanceof JSONArray);
         yes(!request.has("max_output_tokens") && !request.has("previous_response_id") && !request.has("temperature"));
