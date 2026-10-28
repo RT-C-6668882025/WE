@@ -17,15 +17,15 @@ import java.util.concurrent.Executors;
 
 /** Separate launcher in debug APK only. Does not modify MainActivity or its provider. */
 public final class SubscriptionProbeActivity extends Activity {
-    private SubscriptionProbeClient client;
+    private volatile SubscriptionProbeClient client;
     private ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<Button> actions = new ArrayList<>();
     private TextView output;
     private Spinner models;
     private List<String> catalog = new ArrayList<>();
-    private int generation;
-    private boolean destroyed;
-    interface Task { String run() throws Exception; }
+    private volatile int generation;
+    private volatile boolean destroyed;
+    interface Task { String run(SubscriptionProbeClient owner) throws Exception; }
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -36,9 +36,8 @@ public final class SubscriptionProbeActivity extends Activity {
         TextView description = new TextView(this);
         description.setText("仅 debug 包。使用当前 ChatGPT 账号授权，测试请求会使用订阅额度。令牌只在内存；退出页面或进程结束后需重新登录。此页不改变墨灵的书写或原模型接口。\n按顺序执行：登录 → 模型列表 → 文本 → 图片。每项显示结果才算通过；这不是正式 Provider。\n当前只保留一个注册；重新授权需使用原账号/工作区。切换账号需清除此验证注册（卸载测试 App），生产版后续另做多账号管理。");
         root.addView(description);
-        button(root, "Continue with ChatGPT", () -> {
+        button(root, "Continue with ChatGPT", owner -> {
             catalog = new ArrayList<>();
-            SubscriptionProbeClient owner = client;
             int signingGeneration = generation;
             return owner.signIn(url -> runOnUiThread(() -> {
                 if (destroyed || owner != client || signingGeneration != generation) return;
@@ -46,8 +45,7 @@ public final class SubscriptionProbeActivity extends Activity {
                 catch (Exception e) { owner.close(); show("无法打开系统浏览器，请取消后重试。"); }
             }));
         });
-        button(root, "1 · 获取可用模型", () -> {
-            SubscriptionProbeClient owner = client;
+        button(root, "1 · 获取可用模型", owner -> {
             int listingGeneration = generation;
             List<String> found = owner.models();
             runOnUiThread(() -> {
@@ -62,21 +60,21 @@ public final class SubscriptionProbeActivity extends Activity {
         Button text = new Button(this); text.setText("2 · 文本请求（使用订阅额度）"); root.addView(text); actions.add(text);
         text.setOnClickListener(v -> {
             String model = selected();
-            execute(() -> {
-                String answer = client.inference(model, null);
+            execute(owner -> {
+                String answer = owner.inference(model, null);
                 return "文本请求收到 response.completed；" + ("MOLING_OK".equals(answer.trim()) ? "预期内容匹配。" : "预期内容未匹配。") + "\n模型输出：" + answer;
             });
         });
         Button image = new Button(this); image.setText("3 · 图片请求（使用订阅额度）"); root.addView(image); actions.add(image);
         image.setOnClickListener(v -> {
             String model = selected();
-            execute(() -> {
-                String answer = client.inference(model, fixture());
+            execute(owner -> {
+                String answer = owner.inference(model, fixture());
                 return "图片请求收到 response.completed；" + ("12".equals(answer.trim()) ? "图中 7+5 的答案匹配。" : "图中答案未匹配，请检查所选模型能力。") + "\n模型输出：" + answer;
             });
         });
-        button(root, "刷新令牌（接近过期时）", () -> client.refresh());
-        button(root, "退出并撤销当前会话", () -> client.signOut());
+        button(root, "刷新令牌（接近过期时）", owner -> owner.refresh());
+        button(root, "退出并撤销当前会话", owner -> owner.signOut());
         Button cancel = new Button(this); cancel.setText("取消 / 清除内存会话"); root.addView(cancel);
         cancel.setOnClickListener(v -> {
             generation++; client.close(); worker.shutdownNow(); worker = Executors.newSingleThreadExecutor();
@@ -99,10 +97,12 @@ public final class SubscriptionProbeActivity extends Activity {
     private void enable(boolean value) { for (Button b : actions) b.setEnabled(value); models.setEnabled(value); }
     private void show(String value) { output.setText(value); }
     private void execute(Task task) {
+        SubscriptionProbeClient owner = client;
         int attempt = ++generation; enable(false); show("验证中……如已打开授权浏览器，请完成后切回此页。");
         worker.execute(() -> {
             String result;
-            try { result = task.run(); }
+            if (destroyed || generation != attempt || owner != client) return;
+            try { result = task.run(owner); }
             catch (SubscriptionProtocol.Failure e) {
                 result = "未通过：" + e.code + (e.status == 0 ? "" : "\nHTTP " + e.status)
                     + (e.requestId.isEmpty() ? "" : "\nrequest_id: " + e.requestId)
