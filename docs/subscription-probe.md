@@ -128,3 +128,8 @@ node tools/devkit-auth-control.mjs /absolute/path/to/sign-in-with-chatgpt-devkit
 ## v0.1.3 公钥连接恢复
 实机日志显示授权回调通过、令牌端点 HTTP 200，随后 JWKS 公钥下载发生 TLS 握手失败。这不能证明订阅调用已通过，也无法仅据此确定是代理、网络链路或服务端原因。
 公开配置 GET 增加最多两次新连接重试；取消及证书校验失败立即停止。POST 授权码、刷新、推理均不重放，身份签名验证保持不变。真实订阅模型请求仍待用户实机验证。
+
+
+## v0.1.4 参考候选项目后的公钥预取
+候选源码审计见 [subscription-candidates.md](subscription-candidates.md)。参考官方 DevKit 公钥解析器缓存思路，独立实现 10 分钟、客户端内存级 JWKS 缓存；授权前预取是墨灵针对实机网络故障增加的步骤，并非声称 DevKit 自带此流程。只有未知 kid 更新一次公钥，签名和 claims 失败立即拒绝。
+预取失败时不会启动浏览器，也不会消耗授权码；超过缓存有效期或发生签名密钥轮换仍需网络。此措施减少授权完成后的连接数，不保证修复底层 TLS 链路。未接入第三方 Codex 私有通道。

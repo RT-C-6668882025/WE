@@ -41,7 +41,7 @@ public final class SubscriptionProbeActivity extends Activity {
         client = new SubscriptionProbeClient(this);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(24, 24, 24, 24);
         ScrollView scroll = new ScrollView(this); scroll.addView(root); setContentView(scroll);
-        TextView title = new TextView(this); title.setText("Moling · 订阅网络诊断 v0.1.2"); title.setTextSize(23); root.addView(title);
+        TextView title = new TextView(this); title.setText("Moling · 订阅验证 v0.1.4 · 公钥预取"); title.setTextSize(23); root.addView(title);
         TextView description = new TextView(this);
         description.setText("仅 debug 包。使用当前 ChatGPT 账号授权，测试请求会使用订阅额度。令牌只在内存；退出页面或进程结束后需重新登录。此页不改变墨灵的书写或原模型接口。\n按顺序执行：登录 → 模型列表 → 文本 → 图片。每项显示结果才算通过；这不是正式 Provider。\n当前只保留一个注册；重新授权需使用原账号/工作区。切换账号需清除此验证注册（卸载测试 App），生产版后续另做多账号管理。");
         root.addView(description);

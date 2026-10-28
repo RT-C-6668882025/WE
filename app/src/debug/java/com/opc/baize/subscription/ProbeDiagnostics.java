@@ -3,9 +3,9 @@ package com.opc.baize.subscription;
 /** Only fixed stage labels and counters are retained. No URLs, codes, tokens or identity. */
 final class ProbeDiagnostics {
     enum Stage {
-        IDLE("待验证"), DISCOVERY("读取官方授权配置"), WAIT_CALLBACK("等待浏览器授权回调"),
+        IDLE("待验证"), DISCOVERY("读取官方授权配置"), PREFETCH_KEYS("授权前预取身份公钥"), WAIT_CALLBACK("等待浏览器授权回调"),
         CALLBACK_RECEIVED("已收到并校验授权回调"), TOKEN_EXCHANGE("向官方服务换取令牌"),
-        VERIFY_IDENTITY("下载公钥并验证身份"), AUTHORIZED("身份与授权检查结束"),
+        VERIFY_IDENTITY("使用公钥验证身份"), AUTHORIZED("身份与授权检查结束"),
         MODELS("请求账号模型列表"), INFERENCE("请求模型并等待完成事件"),
         REFRESH("刷新令牌"), REVOKE("撤销会话");
         final String label;

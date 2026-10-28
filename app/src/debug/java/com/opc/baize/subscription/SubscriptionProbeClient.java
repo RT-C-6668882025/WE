@@ -21,6 +21,8 @@ final class SubscriptionProbeClient implements Closeable {
     String healthUrl() { LoopbackReceiver r = listener; return r == null ? null : r.healthUrl(); }
     void beginOperation() { diagnostics.reset(); }
     private final ProbeHttp http = new ProbeHttp(diagnostics);
+    private final IdentityKeyCache identityKeys = new IdentityKeyCache(
+        () -> json("GET", discover().getString("jwks_uri"), null, null, null));
     private volatile boolean closed;
     private JSONObject discovery;
     private JSONObject session;
@@ -62,6 +64,9 @@ final class SubscriptionProbeClient implements Closeable {
     String signIn(Browser browser) throws Exception {
         check(); diagnostics.mark(ProbeDiagnostics.Stage.DISCOVERY);
         JSONObject d = discover(); String host = hostId();
+        diagnostics.mark(ProbeDiagnostics.Stage.PREFETCH_KEYS);
+        identityKeys.prefetch();
+        check();
         String state = random(), nonce = random(), verifier = random();
         LoopbackReceiver receiver = new LoopbackReceiver(); listener = receiver;
         String redirect = receiver.callbackUrl();
@@ -90,8 +95,8 @@ final class SubscriptionProbeClient implements Closeable {
             // OAuth refresh can omit an ID token; the existing verified registration stays bound.
             claims = new JSONObject().put("sub", subject);
         } else {
-            claims = IdentityVerifier.verify(result.getString("id_token"),
-                json("GET", discover().getString("jwks_uri"), null, null, null), clientId, nonce, subject, System.currentTimeMillis() / 1000);
+            claims = identityKeys.verify(result.getString("id_token"),
+                clientId, nonce, subject, System.currentTimeMillis() / 1000);
         }
         validateTokenFields(result, session, refreshing);
         long ttl = result.optLong("expires_in", 0);
