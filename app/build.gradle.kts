@@ -48,8 +48,8 @@ android {
     buildTypes {
         debug {
             // Isolate the subscription probe from an installed production Moling.
-            applicationIdSuffix = ".aipaper.authfix3"
-            versionNameSuffix = "-paper.0.2.3"
+            applicationIdSuffix = ".aipaper.inkvision4"
+            versionNameSuffix = "-paper.0.2.4"
         }
         release {
             // 不开混淆：华为手写框架（HWEditView/EPDCDevice）全靠反射触达，

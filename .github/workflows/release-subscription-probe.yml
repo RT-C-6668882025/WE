@@ -29,22 +29,22 @@ jobs:
           test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" --name moling-subscription-probe-debug --dir apk
           test -f apk/app-debug.apk
-          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.2.3.apk
+          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.2.4.apk
           cd apk
-          sha256sum Moling-AI-Paper-v0.2.3.apk > SHA256SUMS.txt
+          sha256sum Moling-AI-Paper-v0.2.4.apk > SHA256SUMS.txt
       - name: Publish diagnostics prerelease
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          墨灵 AI Paper v0.2.3：修复集成版授权状态与页面生命周期回归。
-          授权任务由应用持有，浏览器切换/页面销毁不再自动取消。保留完整身份校验。
-          登录和模型列表分开执行；先看到登录通过，再点击刷新模型列表并启用模型。
-          恢复分阶段网络诊断。模型列表失败会单独报告，不再把已完成的登录标成失败。
-          增加显式取消按钮，令牌仍只在内存。进程被系统终止后仍需重新登录。
-          PDF 和原 API 沿用上一版本。独立包名可与旧版共存。真实设备恢复情况待确认。
+          墨灵 AI Paper v0.2.4：接通无本机识别环境下的订阅手写转写。
+          本地 ML Kit 识别优先；失败且选中 ChatGPT 订阅时，将当前笔迹 PNG 交给所选模型转写，再走原指令、误触判断、历史与回答流程。
+          使用订阅视觉识别时，正常提问包含一次转写请求和一次回答请求，均消耗订阅额度。不自动切换其他计费接口。
+          请登录、刷新模型列表、使用所选模型，然后返回主界面书写；无需自建识别服务。原 API 的识别服务入口保留。
+          沿用 v0.2.3 授权生命周期修复与阶段日志。令牌仅在内存；独立包名，与旧版共存。
+          设备端手写转写与回答仍需实机确认。所选模型必须具备图片输入能力。
           NOTES
           printf '\nSource: %s\n' "$GITHUB_SHA" >> release-notes.md
-          gh release create v0.2.3-ai-paper \
-            apk/Moling-AI-Paper-v0.2.3.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.2.3" --notes-file release-notes.md
+          gh release create v0.2.4-ai-paper \
+            apk/Moling-AI-Paper-v0.2.4.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.2.4" --notes-file release-notes.md

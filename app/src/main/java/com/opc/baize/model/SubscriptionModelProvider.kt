@@ -11,13 +11,16 @@ class SubscriptionModelProvider(private val gateway: SubscriptionGateway, privat
     override fun reply(history: List<Pair<String, String>>, text: String, imageDataUrl: String?): String =
         gateway.reply(buildRequest(model, history, text, imageDataUrl).toString())
 
+    fun recognizeInk(imageDataUrl: String): String = InkVisionProtocol.parse(
+        gateway.reply(InkVisionProtocol.request(model, imageDataUrl).toString()))
+
     companion object {
-        fun buildRequest(model: String, history: List<Pair<String, String>>, text: String, image: String?): JSONObject {
+        fun buildRequest(model: String, history: List<Pair<String, String>>, text: String, image: String?, persona: String = Texts.PERSONA): JSONObject {
             require(model.isNotBlank()) { "请选择订阅模型" }
             val input = JSONArray()
             fun item(role: String, type: String, value: String) = JSONObject().put("role", role)
                 .put("content", JSONArray().put(JSONObject().put("type", type).put("text", value)))
-            input.put(item("developer", "input_text", Texts.PERSONA))
+            input.put(item("developer", "input_text", persona))
             history.takeLast(6).forEach { (question, answer) ->
                 input.put(item("user", "input_text", question))
                 input.put(item("assistant", "output_text", answer))
