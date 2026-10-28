@@ -29,24 +29,22 @@ jobs:
           test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" --name moling-subscription-probe-debug --dir apk
           test -f apk/app-debug.apk
-          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.2.2.apk
+          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.2.3.apk
           cd apk
-          sha256sum Moling-AI-Paper-v0.2.2.apk > SHA256SUMS.txt
+          sha256sum Moling-AI-Paper-v0.2.3.apk > SHA256SUMS.txt
       - name: Publish diagnostics prerelease
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          墨灵 AI Paper v0.2.2：官方订阅 ModelProvider + 本地 PDF 练习工作区。
-          设置 → ChatGPT 登录与模型选择 → 登录 → 使用所选模型 → 返回墨灵书写提问。
-          支持 ModelProvider 切换，保留原 Anthropic 兼容 API、手写识别和历史；不自动跨通道计费。
-          令牌仅存内存，进程退出后重新登录；订阅请求携带最近六轮本地历史。
-          设置 → PDF 练习工作区 → 导入本地 PDF；无选区提交整页，有选区提交矩形区域。
-          首版 100MB 文件上限；原 PDF、笔迹、提交快照和结果分别存储，PDF/触控仍需平板实机验证。
-          当前为可回退集成版，与旧版本共存；本地 PDF 导入、翻页/缩放、独立矢量笔迹、矩形选区、手动图片批改及结果记录已接入；Drive/Room、Agent 尚未接入。
-          构建与单测通过后由工作流发布；需真机确认主界面手写应答。
+          墨灵 AI Paper v0.2.3：修复集成版授权状态与页面生命周期回归。
+          授权任务由应用持有，浏览器切换/页面销毁不再自动取消。保留完整身份校验。
+          登录和模型列表分开执行；先看到登录通过，再点击刷新模型列表并启用模型。
+          恢复分阶段网络诊断。模型列表失败会单独报告，不再把已完成的登录标成失败。
+          增加显式取消按钮，令牌仍只在内存。进程被系统终止后仍需重新登录。
+          PDF 和原 API 沿用上一版本。独立包名可与旧版共存。真实设备恢复情况待确认。
           NOTES
           printf '\nSource: %s\n' "$GITHUB_SHA" >> release-notes.md
-          gh release create v0.2.2-ai-paper \
-            apk/Moling-AI-Paper-v0.2.2.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.2.2" --notes-file release-notes.md
+          gh release create v0.2.3-ai-paper \
+            apk/Moling-AI-Paper-v0.2.3.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.2.3" --notes-file release-notes.md
