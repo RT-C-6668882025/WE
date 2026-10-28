@@ -20,7 +20,7 @@ import org.json.JSONObject
 
 /** Offline PDF practice workspace. PDF decoding is delegated to Android PdfRenderer. */
 class PaperActivity : Activity() {
-    private val io = Executors.newSingleThreadExecutor()
+    private val io = PaperIo.executor
     private val ai = Executors.newSingleThreadExecutor()
     private lateinit var repository: PaperStore
     private lateinit var ink: PaperInkView
@@ -172,10 +172,7 @@ class PaperActivity : Activity() {
     override fun onDestroy() {
         destroyed = true
         // Submitted work may finish saving its captured revision after this screen closes.
-        ai.execute {
-            io.execute { renderer?.close(); renderer = null }
-            io.shutdown()
-        }
+        io.execute { renderer?.close(); renderer = null }
         ai.shutdown()
         ink.release(); super.onDestroy()
     }

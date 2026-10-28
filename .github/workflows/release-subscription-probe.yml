@@ -29,15 +29,15 @@ jobs:
           test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" --name moling-subscription-probe-debug --dir apk
           test -f apk/app-debug.apk
-          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.2.1.apk
+          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.2.2.apk
           cd apk
-          sha256sum Moling-AI-Paper-v0.2.1.apk > SHA256SUMS.txt
+          sha256sum Moling-AI-Paper-v0.2.2.apk > SHA256SUMS.txt
       - name: Publish diagnostics prerelease
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          墨灵 AI Paper v0.2.1：官方订阅 ModelProvider + 本地 PDF 练习工作区。
+          墨灵 AI Paper v0.2.2：官方订阅 ModelProvider + 本地 PDF 练习工作区。
           设置 → ChatGPT 登录与模型选择 → 登录 → 使用所选模型 → 返回墨灵书写提问。
           支持 ModelProvider 切换，保留原 Anthropic 兼容 API、手写识别和历史；不自动跨通道计费。
           令牌仅存内存，进程退出后重新登录；订阅请求携带最近六轮本地历史。
@@ -47,6 +47,6 @@ jobs:
           构建与单测通过后由工作流发布；需真机确认主界面手写应答。
           NOTES
           printf '\nSource: %s\n' "$GITHUB_SHA" >> release-notes.md
-          gh release create v0.2.1-ai-paper \
-            apk/Moling-AI-Paper-v0.2.1.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.2.1" --notes-file release-notes.md
+          gh release create v0.2.2-ai-paper \
+            apk/Moling-AI-Paper-v0.2.2.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.2.2" --notes-file release-notes.md

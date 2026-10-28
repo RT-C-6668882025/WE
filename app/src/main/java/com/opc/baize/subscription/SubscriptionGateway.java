@@ -36,7 +36,11 @@ public final class SubscriptionGateway {
     public synchronized String reply(String requestJson) throws Exception {
         client.beginOperation();
         if (!authorized) throw new SubscriptionProtocol.Failure("sign_in_required");
-        return client.reply(new JSONObject(requestJson));
+        SubscriptionProbeClient owner = client;
+        try { return owner.reply(new JSONObject(requestJson)); }
+        finally {
+            synchronized (state) { if (owner == client) authorized = owner.hasDirectPermission(); }
+        }
     }
     public synchronized String signOut() {
         authorized = false; return client.signOut();
