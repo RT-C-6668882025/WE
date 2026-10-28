@@ -19,5 +19,7 @@ public final class LoginOperationChecks {
         state.browser(cancelled, "stale-url"); state.finish(cancelled, "stale-success");
         yes(state.isCurrent(next)); yes(state.takeBrowserUrl() == null); yes(state.result().isEmpty());
         state.finish(next, "new-success"); yes(state.result().equals("new-success"));
+        long logout = state.start(); state.record("revoked"); state.finish(logout, "stale-authorized");
+        yes(!state.isRunning()); yes(state.result().equals("revoked"));
     }
 }

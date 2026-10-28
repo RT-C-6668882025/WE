@@ -48,8 +48,8 @@ android {
     buildTypes {
         debug {
             // Isolate the subscription probe from an installed production Moling.
-            applicationIdSuffix = ".aipaper.inkvision4"
-            versionNameSuffix = "-paper.0.2.4"
+            applicationIdSuffix = ".aipaper.models30"
+            versionNameSuffix = "-paper.0.3.0"
         }
         release {
             // 不开混淆：华为手写框架（HWEditView/EPDCDevice）全靠反射触达，
@@ -81,6 +81,7 @@ android {
         // AHW 容错单测里会打 Log.i；默认 android.jar 存根会抛"not mocked"，
         // 让 stub 返回默认值即可（不影响纯逻辑测试的断言）。
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -96,6 +97,7 @@ dependencies {
     implementation("androidx.input:input-motionprediction:1.0.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.13")
     // JVM 单测里要用真的 org.json（android.jar 里的是 Stub!）
     testImplementation("org.json:json:20240303")
 }

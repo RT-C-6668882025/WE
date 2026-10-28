@@ -11,7 +11,7 @@ import java.util.*;
 import okhttp3.Response;
 import static com.opc.baize.subscription.SubscriptionProtocol.*;
 
-/** Debug-only single-registration probe. Tokens live in memory and never reach preferences. */
+/** Single-registration official subscription client. Tokens live in memory and never reach preferences. */
 final class SubscriptionProbeClient implements Closeable {
     interface Browser { void open(String url); }
     private final SharedPreferences registration;
@@ -62,7 +62,7 @@ final class SubscriptionProbeClient implements Closeable {
         return discovery;
     }
     String signIn(Browser browser) throws Exception {
-        check(); diagnostics.mark(ProbeDiagnostics.Stage.DISCOVERY);
+        check(); session = null; expiresAt = 0; diagnostics.mark(ProbeDiagnostics.Stage.DISCOVERY);
         JSONObject d = discover(); String host = hostId();
         diagnostics.mark(ProbeDiagnostics.Stage.PREFETCH_KEYS);
         identityKeys.prefetch();
@@ -109,28 +109,26 @@ final class SubscriptionProbeClient implements Closeable {
     private String token() throws Exception {
         check();
         if (!hasDirectPermission()) throw new Failure("plan_permission_required");
-        if (System.currentTimeMillis() >= expiresAt - 30000) throw new Failure("token_expired_refresh_or_sign_in");
+        if (System.currentTimeMillis() >= expiresAt - 30000) refresh();
+        if (!hasDirectPermission()) throw new Failure("sign_in_required");
         return session.getString("access_token");
     }
+    List<ModelCatalog.Entry> catalog() throws Exception {
+        String access = token(); diagnostics.mark(ProbeDiagnostics.Stage.MODELS);
+        return ModelCatalog.parse(json("GET", RESOURCE + "/models", null, null, access));
+    }
     List<String> models() throws Exception {
-        diagnostics.mark(ProbeDiagnostics.Stage.MODELS);
-        JSONObject result = json("GET", RESOURCE + "/models", null, null, token());
-        JSONArray models = result.getJSONArray("models"); List<String> slugs = new ArrayList<>();
-        for (int i = 0; i < models.length(); i++) {
-            JSONObject m = models.getJSONObject(i);
-            if ("list".equals(m.optString("visibility")) && !m.optString("slug").isEmpty()) slugs.add(m.getString("slug"));
-        }
-        if (slugs.isEmpty()) throw new Failure("no_visible_models");
-        return slugs;
+        List<String> ids = new ArrayList<>();
+        for (ModelCatalog.Entry model : catalog()) ids.add(model.id);
+        return ids;
     }
     String inference(String model, String image) throws Exception {
         return reply(request(model, image));
     }
     String reply(JSONObject requestBody) throws Exception {
-        diagnostics.mark(ProbeDiagnostics.Stage.INFERENCE);
-        if (session != null && System.currentTimeMillis() >= expiresAt - 30000) refresh();
+        String access = token(); diagnostics.mark(ProbeDiagnostics.Stage.INFERENCE);
         try (Response response = http.execute("POST", RESOURCE + "/responses", requestBody.toString(),
-                "application/json", token(), "text/event-stream")) {
+                "application/json", access, "text/event-stream")) {
             requireSuccess(response);
             String type = response.header("Content-Type");
             if (type != null && !type.toLowerCase(Locale.ROOT).startsWith("text/event-stream")) throw new Failure("invalid_stream_content_type");

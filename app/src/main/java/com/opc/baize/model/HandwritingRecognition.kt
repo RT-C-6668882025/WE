@@ -1,12 +1,11 @@
 package com.opc.baize.model
 
-/** Try local recognition first. The selected fallback owns errors; never silently switch billing routes. */
+/** Local first by default. An explicitly selected vision mode skips local download waits. */
 object HandwritingRecognition {
-    fun recognize(local: () -> String, unavailable: () -> String?): String? = try {
-        local()
-    } catch (e: InterruptedException) {
-        Thread.currentThread().interrupt(); throw e
-    } catch (e: Exception) {
-        unavailable()
+    fun recognize(local: () -> String, unavailable: () -> String?, directVision: Boolean = false): String? {
+        if (directVision) return unavailable()
+        return try { local() }
+        catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw e }
+        catch (e: Exception) { unavailable() }
     }
 }

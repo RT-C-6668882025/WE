@@ -18,6 +18,7 @@ final class LoginOperation {
         running = false; browserUrl = null; result = value;
     }
     synchronized void cancel() { generation++; running = false; browserUrl = null; result = "已取消授权；可重新登录。"; }
+    synchronized void record(String value) { generation++; running = false; browserUrl = null; result = value; }
     synchronized boolean isRunning() { return running; }
     synchronized String result() { return result; }
     synchronized long version() { return generation; }

@@ -29,6 +29,8 @@ import com.opc.baize.model.AnthropicModelProvider
 import com.opc.baize.model.SubscriptionModelProvider
 import com.opc.baize.model.ModelProvider
 import com.opc.baize.model.HandwritingRecognition
+import com.opc.baize.model.SubscriptionSelection
+import com.opc.baize.subscription.SubscriptionErrors
 import com.opc.baize.subscription.SubscriptionGateway
 import com.opc.baize.subscription.SubscriptionSettingsActivity
 import com.opc.baize.net.DeepSeekClient
@@ -701,7 +703,8 @@ class MainActivity : Activity() {
                 if (recognizer.brokenForever) throw IllegalStateException("local_recognition_unavailable")
                 recognizer.recognize(snapshot)
             },
-            unavailable = { recognizeUnavailable(dataUrl, snapshot.size) }
+            unavailable = { recognizeUnavailable(dataUrl, snapshot.size) },
+            directVision = prefs.getString("model_provider", "anthropic") == "subscription" && SubscriptionSelection.read(this).directVision
         ) ?: return
 
         // —— 误触闸第二级：低笔画只认短而明确的结果 ——
@@ -731,9 +734,7 @@ class MainActivity : Activity() {
 
         // —— 大模型未配置：兜底提示，不烧请求、不崩 ——
         val subscription = prefs.getString("model_provider", "anthropic") == "subscription"
-        val provider: ModelProvider = if (subscription) SubscriptionModelProvider(
-            SubscriptionGateway.get(this), prefs.getString("subscription_model", "") ?: ""
-        ) else AnthropicModelProvider(modelConfig())
+        val provider: ModelProvider = if (subscription) SubscriptionSelection.provider(this) else AnthropicModelProvider(modelConfig())
         if (!provider.isReady()) {
             ui.post { blinkSealTwice() }   // 印章闪两下，提示去设置填 API
             uiWriteAndWait { done ->
@@ -751,7 +752,10 @@ class MainActivity : Activity() {
         val reply = try {
             provider.reply(memory.history(), recognized)
         } catch (t: Throwable) {
-            uiWriteAndWait { done -> failOnPage(done) }
+            uiWriteAndWait { done ->
+                if (subscription && t is Exception) book.writeAnimated("fail", "订阅回答未完成：" + SubscriptionErrors.describe(t), false, done)
+                else failOnPage(done)
+            }
             return
         }
         memory.remember(recognized, reply)
@@ -765,7 +769,7 @@ class MainActivity : Activity() {
             fallbackRound(dataUrl, strokeCount)
             return null
         }
-        val provider = SubscriptionModelProvider(SubscriptionGateway.get(this), prefs.getString("subscription_model", "") ?: "")
+        val provider = SubscriptionSelection.provider(this, image = true)
         if (!provider.isReady()) {
             uiWriteAndWait { done -> book.writeAnimated("fail", "请在设置中登录 ChatGPT、获取模型并点击使用所选模型，方可识别此机手写。", false, done) }
             return null
@@ -777,10 +781,7 @@ class MainActivity : Activity() {
         return try {
             provider.recognizeInk(dataUrl)
         } catch (e: Exception) {
-            val detail = if (e is com.opc.baize.subscription.SubscriptionProtocol.Failure)
-                e.code + if (e.status != 0) "（HTTP ${e.status}）" else ""
-                else e.javaClass.simpleName
-            uiWriteAndWait { done -> book.writeAnimated("fail", "订阅手写识别未完成：$detail。请检查网络与所选模型的图片能力。", false, done) }
+            uiWriteAndWait { done -> book.writeAnimated("fail", "订阅手写识别未完成：" + SubscriptionErrors.describe(e), false, done) }
             null
         }
     }

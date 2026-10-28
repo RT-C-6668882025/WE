@@ -5,7 +5,7 @@ import java.util.List;
 import org.json.JSONObject;
 
 /** One application-scoped session; all grants and requests serialized. Credentials stay in RAM. */
-public final class SubscriptionGateway {
+public final class SubscriptionGateway implements SubscriptionConnection {
     public interface Browser { void open(String url); }
     private static SubscriptionGateway instance;
     public static synchronized SubscriptionGateway get(Context context) {
@@ -15,6 +15,21 @@ public final class SubscriptionGateway {
     private final Context context;
     private volatile SubscriptionProbeClient client;
     private volatile boolean authorized;
+    private volatile List<ModelCatalog.Entry> catalog = java.util.Collections.emptyList();
+    private final java.util.concurrent.ConcurrentHashMap<String, String> checks = new java.util.concurrent.ConcurrentHashMap<>();
+    public List<ModelCatalog.Entry> cachedCatalog() { return catalog; }
+    public String modelCheck(String model, boolean image) { return checks.getOrDefault(model + (image ? ":image" : ":text"), "未验证"); }
+    public void recordCheck(String model, boolean image, String result) { checks.put(model + (image ? ":image" : ":text"), result); }
+    public synchronized List<ModelCatalog.Entry> catalog() throws Exception {
+        client.beginOperation();
+        try { catalog = client.catalog(); return catalog; }
+        finally { synchronized (state) { authorized = client.hasDirectPermission(); } }
+    }
+    public synchronized String refreshSession() throws Exception {
+        client.beginOperation();
+        try { return client.refresh(); }
+        finally { synchronized (state) { authorized = client.hasDirectPermission(); } }
+    }
     private final Object state = new Object();
     private final LoginOperation login = new LoginOperation();
     private final java.util.concurrent.ExecutorService authorization = java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -43,7 +58,7 @@ public final class SubscriptionGateway {
     public synchronized String signIn(Browser browser) throws Exception { return signIn(client, browser); }
     private synchronized String signIn(SubscriptionProbeClient owner, Browser browser) throws Exception {
         if (owner != client) throw new SubscriptionProtocol.Failure("cancelled");
-        authorized = false; owner.beginOperation();
+        authorized = false; catalog = java.util.Collections.emptyList(); checks.clear(); owner.beginOperation();
         String result = owner.signIn(browser::open);
         if (owner != client) throw new SubscriptionProtocol.Failure("cancelled");
         synchronized (state) {
@@ -53,7 +68,9 @@ public final class SubscriptionGateway {
         return result;
     }
     public synchronized List<String> models() throws Exception {
-        client.beginOperation(); return client.models();
+        java.util.ArrayList<String> ids = new java.util.ArrayList<>();
+        for (ModelCatalog.Entry model : catalog()) ids.add(model.id);
+        return ids;
     }
     public synchronized String reply(String requestJson) throws Exception {
         client.beginOperation();
@@ -65,13 +82,14 @@ public final class SubscriptionGateway {
         }
     }
     public synchronized String signOut() {
-        authorized = false; return client.signOut();
+        authorized = false; catalog = java.util.Collections.emptyList(); checks.clear();
+        String result = client.signOut(); login.record(result); return result;
     }
     /** Cancels without waiting for an OAuth callback/network request to finish. */
     public void cancel() {
         synchronized (state) {
             login.cancel();
-            authorized = false;
+            authorized = false; catalog = java.util.Collections.emptyList(); checks.clear();
             SubscriptionProbeClient old = client;
             client = new SubscriptionProbeClient(context);
             old.close();

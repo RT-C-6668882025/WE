@@ -1,15 +1,18 @@
 package com.opc.baize.model
 
-import com.opc.baize.subscription.SubscriptionGateway
+import com.opc.baize.subscription.SubscriptionConnection
 import com.opc.baize.core.Texts
 import org.json.JSONArray
 import org.json.JSONObject
 
-class SubscriptionModelProvider(private val gateway: SubscriptionGateway, private val model: String) : ModelProvider {
+class SubscriptionModelProvider(private val gateway: SubscriptionConnection, private val model: String) : ModelProvider {
     override val supportsImages = true // Actual support still depends on the account model selected.
     override fun isReady() = gateway.isAuthorized && model.isNotBlank()
     override fun reply(history: List<Pair<String, String>>, text: String, imageDataUrl: String?): String =
-        gateway.reply(buildRequest(model, history, text, imageDataUrl).toString())
+        gateway.reply(buildRequest(model, history, text, imageDataUrl).toString()).also { require(it.isNotBlank()) { "empty_model_reply" } }
+
+    fun explainImage(text: String, imageDataUrl: String): String = gateway.reply(buildRequest(model, emptyList(), text,
+        imageDataUrl, "你是学习助手。根据题干和手写作答准确批改或解释。信息不足时明确说明，不编造内容。按用户要求使用现代中文。").toString())
 
     fun recognizeInk(imageDataUrl: String): String = InkVisionProtocol.parse(
         gateway.reply(InkVisionProtocol.request(model, imageDataUrl).toString()))

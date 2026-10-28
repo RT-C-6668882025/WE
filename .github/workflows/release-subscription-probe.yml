@@ -29,22 +29,23 @@ jobs:
           test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" --name moling-subscription-probe-debug --dir apk
           test -f apk/app-debug.apk
-          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.2.4.apk
+          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.3.0.apk
           cd apk
-          sha256sum Moling-AI-Paper-v0.2.4.apk > SHA256SUMS.txt
+          sha256sum Moling-AI-Paper-v0.3.0.apk > SHA256SUMS.txt
       - name: Publish diagnostics prerelease
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          墨灵 AI Paper v0.2.4：接通无本机识别环境下的订阅手写转写。
-          本地 ML Kit 识别优先；失败且选中 ChatGPT 订阅时，将当前笔迹 PNG 交给所选模型转写，再走原指令、误触判断、历史与回答流程。
-          使用订阅视觉识别时，正常提问包含一次转写请求和一次回答请求，均消耗订阅额度。不自动切换其他计费接口。
-          请登录、刷新模型列表、使用所选模型，然后返回主界面书写；无需自建识别服务。原 API 的识别服务入口保留。
-          沿用 v0.2.3 授权生命周期修复与阶段日志。令牌仅在内存；独立包名，与旧版共存。
-          设备端手写转写与回答仍需实机确认。所选模型必须具备图片输入能力。
+          墨灵 AI Paper v0.3.0：完善订阅模型选择与实际调用链路。
+          账号动态模型列表，展示名称和ID，独立选择文字回答模型、图片/手写/PDF模型，支持图片沿用文字模型。
+          设置页显示已保存模型、当前通道、候选测试状态；提供真实文字和图片转写测试。未验证图片能力不伪称支持。
+          主界面、本机识别失败的订阅转写和PDF统一读取选择；可勾选直接图片识别跳过本机等待。
+          模型列表与请求前统一处理令牌临期刷新；退出清除会话、列表和测试状态；保留应用级授权与安全阶段日志。
+          图片转写后进入原指令/历史/回答流程。新增生产设置页模型选择/恢复的Robolectric测试及跨模型请求契约测试。
+          凭据仍仅在内存，进程结束后重新登录；不会静默跨模型或计费接口降级。PDF设备端行为仍需真机验证。
           NOTES
           printf '\nSource: %s\n' "$GITHUB_SHA" >> release-notes.md
-          gh release create v0.2.4-ai-paper \
-            apk/Moling-AI-Paper-v0.2.4.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.2.4" --notes-file release-notes.md
+          gh release create v0.3.0-ai-paper \
+            apk/Moling-AI-Paper-v0.3.0.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.3.0" --notes-file release-notes.md

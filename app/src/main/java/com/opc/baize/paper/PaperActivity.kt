@@ -139,7 +139,7 @@ class PaperActivity : Activity() {
         if (prefs.getString("model_provider", "anthropic") != "subscription") {
             status.text = "图片批改请先在墨灵设置中启用 ChatGPT 订阅。原 API 适配器目前只支持文字。"; return
         }
-        val provider = SubscriptionModelProvider(SubscriptionGateway.get(this), prefs.getString("subscription_model", "") ?: "")
+        val provider = SubscriptionSelection.provider(this, image = true)
         if (!provider.isReady()) { status.text = "请返回墨灵设置登录 ChatGPT 并选择模型。"; return }
         val (bitmap, data, region) = ink.snapshot()
         val id = document!!; val index = pageIndex
@@ -152,7 +152,7 @@ class PaperActivity : Activity() {
                 snapshotSave.get()
                 val bytes = ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
                 val image = "data:image/png;base64," + android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP)
-                val answer = provider.reply(emptyList(), prompt, image)
+                val answer = provider.explainImage(prompt, image)
                 // Store the exact source vectors and metadata independently of the editable current page.
                 io.execute {
                     try { repository.result(id, index, data.revision, regionJson, answer, snapshotName) }
@@ -163,8 +163,7 @@ class PaperActivity : Activity() {
                     AlertDialog.Builder(this).setTitle("批改 / 解释结果").setMessage(answer).setPositiveButton("关闭", null).show()
                 } }
             } catch (e: Exception) {
-                val code = (e as? SubscriptionProtocol.Failure)?.code ?: "request_failed"
-                message("提交未完成：$code。笔迹保留，可继续书写。")
+                message("提交未完成：" + com.opc.baize.subscription.SubscriptionErrors.describe(e) + "。笔迹保留，可继续书写。")
             } finally { bitmap.recycle(); runOnUiThread { submitting = false } }
         }
     }
