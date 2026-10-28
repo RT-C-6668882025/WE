@@ -8,7 +8,7 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import javax.net.ssl.HttpsURLConnection;
+import okhttp3.Response;
 import static com.opc.baize.subscription.SubscriptionProtocol.*;
 
 /** Debug-only single-registration probe. Tokens live in memory and never reach preferences. */
@@ -20,7 +20,7 @@ final class SubscriptionProbeClient implements Closeable {
     String diagnostics() { return diagnostics.snapshot(); }
     String healthUrl() { LoopbackReceiver r = listener; return r == null ? null : r.healthUrl(); }
     void beginOperation() { diagnostics.reset(); }
-    private volatile HttpsURLConnection connection;
+    private final ProbeHttp http = new ProbeHttp(diagnostics);
     private volatile boolean closed;
     private JSONObject discovery;
     private JSONObject session;
@@ -120,24 +120,23 @@ final class SubscriptionProbeClient implements Closeable {
     }
     String inference(String model, String image) throws Exception {
         diagnostics.mark(ProbeDiagnostics.Stage.INFERENCE);
-        HttpsURLConnection c = open("POST", RESOURCE + "/responses", token());
-        try {
-            c.setRequestProperty("Accept", "text/event-stream");
-            send(c, request(model, image).toString(), "application/json");
-            requireSuccess(c);
-            String type = c.getContentType();
+        try (Response response = http.execute("POST", RESOURCE + "/responses", request(model, image).toString(),
+                "application/json", token(), "text/event-stream")) {
+            requireSuccess(response);
+            String type = response.header("Content-Type");
             if (type != null && !type.toLowerCase(Locale.ROOT).startsWith("text/event-stream")) throw new Failure("invalid_stream_content_type");
-            Stream stream = new Stream(); long deadline = System.nanoTime() + 120_000_000_000L;
-            InputStream in = new BufferedInputStream(c.getInputStream());
+            if (response.body() == null) throw new Failure("empty_response_body");
+            Stream stream = new Stream();
+            InputStream in = new BufferedInputStream(response.body().byteStream());
             while (!stream.completed) {
-                check(); if (System.nanoTime() > deadline) throw new Failure("stream_timeout");
+                check();
                 String line = boundedLineOrNull(in, 2 * 1024 * 1024);
                 if (line == null) break;
                 try { stream.line(line); }
-                catch (Failure e) { throw new Failure(e.code, c.getResponseCode(), c.getHeaderField("x-request-id")); }
+                catch (Failure e) { throw new Failure(e.code, response.code(), response.header("x-request-id")); }
             }
             return stream.finish();
-        } finally { c.disconnect(); connection = null; }
+        } catch (IOException e) { throw http.failure(e); }
     }
     String refresh() throws Exception {
         diagnostics.mark(ProbeDiagnostics.Stage.REFRESH);
@@ -168,48 +167,35 @@ final class SubscriptionProbeClient implements Closeable {
         JSONObject old = session; session = null;
         if (old == null || old.optString("refresh_token").isEmpty()) return "已清除本地会话；注册与 host ID 保留。";
         try {
-            HttpsURLConnection c = open("POST", discover().getString("revocation_endpoint"), null);
-            try {
-                send(c, form(fields("token", old.getString("refresh_token"), "token_type_hint", "refresh_token", "client_id", clientId)), "application/x-www-form-urlencoded");
-                if (c.getResponseCode() != 200) return "本地会话已清除，远端撤销未确认；请在 ChatGPT 设置中断开应用。";
+            try (Response response = http.execute("POST", discover().getString("revocation_endpoint"),
+                    form(fields("token", old.getString("refresh_token"), "token_type_hint", "refresh_token", "client_id", clientId)),
+                    "application/x-www-form-urlencoded", null, "application/json")) {
+                if (response.code() != 200) return "本地会话已清除，远端撤销未确认；请在 ChatGPT 设置中断开应用。";
                 return "远端会话撤销成功；本地令牌已清除。";
-            } finally { c.disconnect(); connection = null; }
+            }
         } catch (Exception e) { return "本地会话已清除，远端撤销未确认；请在 ChatGPT 设置中断开应用。"; }
     }
-    private HttpsURLConnection open(String method, String url, String bearer) throws Exception {
-        check();
-        HttpsURLConnection c = (HttpsURLConnection) new URL(url).openConnection(); connection = c;
-        c.setInstanceFollowRedirects(false); c.setConnectTimeout(15000); c.setReadTimeout(30000); c.setRequestMethod(method);
-        if (bearer != null) c.setRequestProperty("Authorization", "Bearer " + bearer);
-        check(); return c;
-    }
-    private static void send(HttpsURLConnection c, String body, String type) throws Exception {
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        c.setDoOutput(true); c.setRequestProperty("Content-Type", type); c.setFixedLengthStreamingMode(bytes.length);
-        try (OutputStream out = c.getOutputStream()) { out.write(bytes); }
-    }
     private JSONObject json(String method, String url, String body, String type, String bearer) throws Exception {
-        HttpsURLConnection c = open(method, url, bearer);
-        try {
-            if (body != null) send(c, body, type);
-            requireSuccess(c);
-            try (InputStream in = c.getInputStream()) { return new JSONObject(read(in, 2 * 1024 * 1024)); }
-        } finally { c.disconnect(); connection = null; }
+        try (Response response = http.execute(method, url, body, type, bearer, "application/json")) {
+            requireSuccess(response);
+            if (response.body() == null) throw new Failure("empty_response_body");
+            return new JSONObject(read(response.body().byteStream(), 2 * 1024 * 1024));
+        } catch (IOException e) { throw http.failure(e); }
     }
-    private static void requireSuccess(HttpsURLConnection c) throws Exception {
-        int status = c.getResponseCode();
+    private static void requireSuccess(Response response) throws Exception {
+        int status = response.code();
         if (status >= 200 && status < 300) return;
         String code = "http_error";
-        try (InputStream in = c.getErrorStream()) {
-            if (in != null) {
-                JSONObject obj = new JSONObject(read(in, 32768));
+        try {
+            if (response.body() != null) {
+                JSONObject obj = new JSONObject(read(response.body().byteStream(), 32768));
                 Object err = obj.opt("error");
                 if (err instanceof JSONObject) code = errorCode((JSONObject) err);
                 else if (err instanceof String) code = errorCode(new JSONObject().put("code", err));
                 else if (obj.has("detail")) code = "admission_rejected_detail";
             }
-        } catch (Exception ignored) { /* Report status without echoing server bodies. */ }
-        throw new Failure(code, status, c.getHeaderField("x-request-id"));
+        } catch (Exception ignored) { /* Keep status without echoing credential-bearing bodies. */ }
+        throw new Failure(code, status, response.header("x-request-id"));
     }
     private static String read(InputStream in, int limit) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] b = new byte[4096]; int n;
@@ -219,7 +205,7 @@ final class SubscriptionProbeClient implements Closeable {
     static String boundedLineOrNull(InputStream in, int limit) throws Exception { return LoopbackReceiver.line(in, limit); }
     @Override public void close() {
         closed = true; session = null;
-        HttpsURLConnection c = connection; if (c != null) c.disconnect();
+        http.close();
         LoopbackReceiver s = listener; if (s != null) try { s.close(); } catch (IOException ignored) {}
     }
 }

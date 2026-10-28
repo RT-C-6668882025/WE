@@ -107,3 +107,19 @@ node tools/devkit-auth-control.mjs /absolute/path/to/sign-in-with-chatgpt-devkit
 ```
 
 `--check` 仅验证模块可导入；本轮该检查已通过。这里的云端浏览器与 SDK 进程的本机网络不相通，打开探针监听端口得到 ERR_CONNECTION_REFUSED，因此没有发起会产生无效回调对照的真实账号授权。**同账号官方 DevKit 真实授权仍未完成**，必须在浏览器和 SDK 共享 loopback 的设备上进行。
+
+## v0.1.2：令牌交换的网络层
+
+设备截图已证明：授权回调到达 1 次、被拒绝 0 次，151 秒进入 token exchange，154 秒出现 SocketException。因此，浏览器到 App 的实际授权回调已经成功；本轮定位在 App 换取令牌的传输阶段。没有 HTTP 状态/服务端拒绝码，尚不能判断为资格拒绝或授权服务业务错误。
+
+验证页的 HttpURLConnection 改为固定版本 OkHttp 4.12.0（仅 debugImplementation），继续使用官方 HTTPS endpoint 和系统证书校验。新请求不复用空闲连接，排除长时间浏览器授权后复用失效连接的变量。这个变量是待验证假设，不是已复现的根因。
+
+- 记录固定网络阶段：DNS、TCP/代理连接、TLS、请求头、请求体写出、等待/收到 HTTP 响应。
+- 异常只转换为固定分类：connection_reset、broken_pipe、socket_closed、DNS、connect、timeout、TLS/certificate、EOF 等；不输出异常原文、URL、地址、请求体或凭据。
+- 禁止自动重试和跨域重定向；令牌交换/刷新失败后需要显式重新授权，不自动重放可能已消费的授权码或 refresh token。
+- TLS/证书校验不作降级；HTTP 总调用上限 120 秒，连接 15 秒、读取和写入各 30 秒。
+- 包名为 `com.opc.moling.subscriptionprobe.netdiag`，入口「Moling 订阅网络诊断」，可与之前版本共存。
+
+主机验证：42 项协议检查、10 项回环套接字检查、10 项安全异常分类检查、6 项真实 OkHttp 到本地合成 HTTP 服务的检查通过。后者验证连续请求确实使用不同 TCP 连接，以及服务端在收到 POST 后断开时只发送一次、不自动重放。全部新增 debug Java 对 Android 34 接口编译通过。完整 Android 单测/lint/APK 构建以当前提交 CI 为准；实际账号换令牌是否恢复仍待设备验证。
+
+可选主机网络测试：给 `tools/check-subscription-protocol.sh` 设置 `OKHTTP_TEST_CLASSPATH`，使用以冒号连接的 okhttp、okio-jvm 和 kotlin-stdlib jar 路径。Gradle 中的 debug 单测会直接使用声明的依赖。Apache 授权及归属信息随 debug APK 的 subscription-network-licenses 资源提供。

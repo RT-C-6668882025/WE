@@ -29,21 +29,21 @@ jobs:
           test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" --name moling-subscription-probe-debug --dir apk
           test -f apk/app-debug.apk
-          mv apk/app-debug.apk apk/Moling-Subscription-Probe-v0.1.1.apk
+          mv apk/app-debug.apk apk/Moling-Subscription-Probe-v0.1.2.apk
           cd apk
-          sha256sum Moling-Subscription-Probe-v0.1.1.apk > SHA256SUMS.txt
+          sha256sum Moling-Subscription-Probe-v0.1.2.apk > SHA256SUMS.txt
       - name: Publish diagnostics prerelease
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          Android 授权诊断 v0.1.1，独立包名，可与正式版和旧测试版共存。
-          登录卡住时切回「Moling 订阅诊断」，查看当前阶段，并点击「测试浏览器到本机回调的连通性」。
-          诊断区分等待回调、收到回调、令牌交换、身份验证；不会记录授权码或令牌。
+          Android 授权诊断 v0.1.2，独立包名，可与正式版和旧测试版共存。
+          使用 OkHttp 新连接和分阶段网络事件，区分 DNS、TCP、TLS、请求体发送和 HTTP 响应。
+          授权码与刷新令牌请求不自动重试。诊断只显示固定错误码，不记录凭据或请求体。
           已通过协议检查、真实本机套接字测试、Android 单测、lint 及 debug/release 构建。
           真实用户订阅授权仍待验证。本版本提供诊断能力，不宣称已修复授权服务。
           NOTES
           printf '\nSource: %s\n' "$GITHUB_SHA" >> release-notes.md
-          gh release create v0.1.1-subscription-probe \
-            apk/Moling-Subscription-Probe-v0.1.1.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "Moling 订阅诊断 v0.1.1" --notes-file release-notes.md
+          gh release create v0.1.2-subscription-probe \
+            apk/Moling-Subscription-Probe-v0.1.2.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "Moling 订阅诊断 v0.1.2" --notes-file release-notes.md

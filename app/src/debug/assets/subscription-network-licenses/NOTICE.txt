@@ -1,0 +1,13 @@
+Subscription probe debug network dependencies
+
+OkHttp 4.12.0 — Copyright Square, Inc. — Apache License 2.0
+https://github.com/square/okhttp
+
+Okio (transitive dependency) — Copyright Square, Inc. — Apache License 2.0
+https://github.com/square/okio
+
+Kotlin standard library — Copyright JetBrains s.r.o. and Kotlin Programming Language contributors — Apache License 2.0
+https://github.com/JetBrains/kotlin
+
+See Apache-2.0.txt. This notice does not replace the upstream project license
+or the licenses of other components already included by Moling.
