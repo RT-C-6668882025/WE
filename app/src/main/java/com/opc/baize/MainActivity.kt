@@ -1172,7 +1172,7 @@ class MainActivity : Activity() {
             text = "ChatGPT 登录与模型选择"
             setOnClickListener { startActivity(android.content.Intent(this@MainActivity, SubscriptionSettingsActivity::class.java)) }
         })
-        col.addView(hint("订阅会话仅在本次进程中保留。切换原 API 后沿用下方配置，不自动跨通道扣费。"))
+        col.addView(hint("订阅登录会在本机加密保存，重启应用后恢复。切换原 API 沿用下方配置，不自动跨通道扣费。"))
         gap(12f)
 
         // (b) 大模型 API 设置

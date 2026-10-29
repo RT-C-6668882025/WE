@@ -47,3 +47,5 @@ AndroidPdfViewer 当前 Maven Central 的 dev.zwander:pdfviewer:5.0.0 AAR 实测
 
 ## v0.3.1：持久登录缺口修复
 不再仅存内存。增加Keystore加密原子会话存储、启动恢复、持久化刷新journal、pending身份恢复和明确退出删除；同一构建新增真实Android强制停止后的恢复测试，发布等待设备检查。详见 [subscription-persistence.md](subscription-persistence.md)。
+
+v0.3.2 同步修正主设置和隐藏验证页的旧内存会话提示，持久化及强停恢复检查保持不变。

@@ -29,15 +29,15 @@ jobs:
           test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" --name moling-subscription-probe-debug --dir apk
           test -f apk/app-debug.apk
-          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.3.1.apk
+          mv apk/app-debug.apk apk/Moling-AI-Paper-v0.3.2.apk
           cd apk
-          sha256sum Moling-AI-Paper-v0.3.1.apk > SHA256SUMS.txt
+          sha256sum Moling-AI-Paper-v0.3.2.apk > SHA256SUMS.txt
       - name: Publish diagnostics prerelease
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'NOTES'
-          墨灵 AI Paper v0.3.1：持久登录。
+          墨灵 AI Paper v0.3.2：持久登录。
           授权通过后，使用 Android Keystore AES-GCM 加密保存会话，密文放在禁止备份目录；启动恢复已验证登录，保留模型偏好。
           刷新前写入不可重复使用旧令牌的状态；新响应先加密保存再验签，公钥暂不可用时可重试恢复，不重发旧刷新请求。
           明确退出登录会删除密文和密钥，普通页面关闭不会删除。授权撤销、密钥不可恢复或刷新请求结果不明时会要求重新登录。
@@ -45,6 +45,6 @@ jobs:
           CI包含Android API30真实Keystore加密、强制停止后新进程恢复、退出清理、密文篡改拒绝测试；全部通过才发布APK。
           NOTES
           printf '\nSource: %s\n' "$GITHUB_SHA" >> release-notes.md
-          gh release create v0.3.1-ai-paper \
-            apk/Moling-AI-Paper-v0.3.1.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.3.1" --notes-file release-notes.md
+          gh release create v0.3.2-ai-paper \
+            apk/Moling-AI-Paper-v0.3.2.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "Moling AI Paper v0.3.2" --notes-file release-notes.md

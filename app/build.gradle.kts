@@ -49,8 +49,8 @@ android {
     buildTypes {
         debug {
             // Isolate the subscription probe from an installed production Moling.
-            applicationIdSuffix = ".aipaper.persist31"
-            versionNameSuffix = "-paper.0.3.1"
+            applicationIdSuffix = ".aipaper.persist32"
+            versionNameSuffix = "-paper.0.3.2"
         }
         release {
             // 不开混淆：华为手写框架（HWEditView/EPDCDevice）全靠反射触达，
