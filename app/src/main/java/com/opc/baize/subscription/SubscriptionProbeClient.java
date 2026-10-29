@@ -11,10 +11,16 @@ import java.util.*;
 import okhttp3.Response;
 import static com.opc.baize.subscription.SubscriptionProtocol.*;
 
-/** Single-registration official subscription client. Tokens live in memory and never reach preferences. */
+/** Single-registration official subscription client. Credentials are encrypted in Android Keystore-backed no-backup storage. */
 final class SubscriptionProbeClient implements Closeable {
     interface Browser { void open(String url); }
     private final SharedPreferences registration;
+    private final SessionJournal journal;
+    private final Object credentialState = new Object();
+    private JSONObject savedRecord;
+    private String restoreIssue = "";
+    String restoreIssue() { return restoreIssue; }
+    boolean hasPendingIdentity() { return savedRecord != null && "pending".equals(savedRecord.optString("state")); }
     private volatile LoopbackReceiver listener;
     private final ProbeDiagnostics diagnostics = new ProbeDiagnostics();
     String diagnostics() { return diagnostics.snapshot(); }
@@ -30,10 +36,29 @@ final class SubscriptionProbeClient implements Closeable {
     private String clientId;
     private long expiresAt;
 
-    SubscriptionProbeClient(Context context) {
+    SubscriptionProbeClient(Context context) { this(context, new SecureCredentialStore(context)); }
+    SubscriptionProbeClient(Context context, CredentialStore store) {
+        journal = new SessionJournal(store);
         registration = context.getSharedPreferences("subscription_probe_registration", Context.MODE_PRIVATE);
         subject = registration.getString("subject", null);
         clientId = registration.getString("client_id", "");
+        try {
+            savedRecord = journal.read(clientId, subject);
+            if (savedRecord != null && "verified".equals(savedRecord.optString("state"))) {
+                session = savedRecord.getJSONObject("tokens"); expiresAt = savedRecord.getLong("expires_at");
+                subject = savedRecord.getString("subject");
+            } else if (hasPendingIdentity()) restoreIssue = "identity_verification_pending";
+            else if (savedRecord != null) restoreIssue = "refresh_interrupted_sign_in_required";
+        } catch (Exception e) { restoreIssue = "saved_session_unavailable"; session = null; }
+    }
+    String restoreSession() throws Exception {
+        check();
+        if (hasPendingIdentity()) finishPending(savedRecord);
+        if (!hasDirectPermission()) throw new Failure(restoreIssue.isEmpty() ? "sign_in_required" : restoreIssue);
+        return "已从本机加密存储恢复订阅登录。";
+    }
+    void clearSavedSession() throws Exception {
+        synchronized (credentialState) { session = null; savedRecord = null; expiresAt = 0; journal.clear(); }
     }
     private void check() throws Failure { if (closed || Thread.currentThread().isInterrupted()) throw new Failure("cancelled"); }
     private String hostId() throws Failure {
@@ -62,7 +87,8 @@ final class SubscriptionProbeClient implements Closeable {
         return discovery;
     }
     String signIn(Browser browser) throws Exception {
-        check(); session = null; expiresAt = 0; diagnostics.mark(ProbeDiagnostics.Stage.DISCOVERY);
+        synchronized (credentialState) { check(); clearSavedSession(); restoreIssue = ""; }
+        diagnostics.mark(ProbeDiagnostics.Stage.DISCOVERY);
         JSONObject d = discover(); String host = hostId();
         diagnostics.mark(ProbeDiagnostics.Stage.PREFETCH_KEYS);
         identityKeys.prefetch();
@@ -83,32 +109,50 @@ final class SubscriptionProbeClient implements Closeable {
                 "grant_type", "authorization_code", "client_id", clientId, "code", cb.get("code"),
                 "code_verifier", verifier, "redirect_uri", redirect, "resource", RESOURCE)),
                 "application/x-www-form-urlencoded", null);
-            install(result, nonce, false);
+            install(result, nonce, false, null);
             diagnostics.mark(ProbeDiagnostics.Stage.AUTHORIZED);
             return hasDirectPermission() ? "身份与订阅权限验证通过；尚未验证模型请求。" : "身份验证通过，但未授权订阅调用。请重新授权或使用原模型接口。";
         } finally { receiver.close(); if (listener == receiver) listener = null; }
     }
-    private void install(JSONObject result, String nonce, boolean refreshing) throws Exception {
+    private void install(JSONObject result, String nonce, boolean refreshing, JSONObject previous) throws Exception {
+        validateTokenFields(result, previous, refreshing);
+        long receivedAt = System.currentTimeMillis();
+        synchronized (credentialState) {
+            check();
+            journal.pending(clientId, subject, result, nonce, refreshing, receivedAt);
+            savedRecord = journal.read(clientId, subject); session = null;
+            restoreIssue = "identity_verification_pending";
+        }
+        finishPending(savedRecord);
+    }
+    private void finishPending(JSONObject record) throws Exception {
         diagnostics.mark(ProbeDiagnostics.Stage.VERIFY_IDENTITY);
+        JSONObject result = record.getJSONObject("tokens");
+        long receivedAt = record.getLong("received_at");
+        if (receivedAt <= 0) throw new Failure("saved_session_invalid");
+        String nonce = record.isNull("nonce") ? null : record.getString("nonce");
         JSONObject claims;
-        if (refreshing && !result.has("id_token") && subject != null) {
-            // OAuth refresh can omit an ID token; the existing verified registration stays bound.
+        if (record.getBoolean("refreshing") && !result.has("id_token") && subject != null) {
             claims = new JSONObject().put("sub", subject);
         } else {
-            claims = identityKeys.verify(result.getString("id_token"),
-                clientId, nonce, subject, System.currentTimeMillis() / 1000);
+            // Validate as received, so a temporary key outage cannot expire the checkpoint itself.
+            claims = identityKeys.verify(result.getString("id_token"), clientId, nonce, subject, receivedAt / 1000);
         }
-        validateTokenFields(result, session, refreshing);
-        long ttl = result.optLong("expires_in", 0);
-        check();
+        validateTokenFields(result, null, false);
         String nextSubject = claims.getString("sub");
-        if (!registration.edit().putString("subject", nextSubject).commit()) throw new Failure("registration_save_failed");
-        subject = nextSubject; session = result; expiresAt = System.currentTimeMillis() + ttl * 1000;
+        long nextExpiry = Math.addExact(receivedAt, Math.multiplyExact(result.optLong("expires_in", 0), 1000));
+        synchronized (credentialState) {
+            check();
+            if (!registration.edit().putString("subject", nextSubject).commit()) throw new Failure("registration_save_failed");
+            journal.verified(clientId, nextSubject, result, nextExpiry);
+            subject = nextSubject; session = result; expiresAt = nextExpiry; savedRecord = null; restoreIssue = "";
+        }
     }
     boolean hasDirectPermission() { return session != null && hasScope(session.optString("scope"), DIRECT_SCOPE) && hasScope(session.optString("scope"), "resource.invoke"); }
     private String token() throws Exception {
         check();
-        if (!hasDirectPermission()) throw new Failure("plan_permission_required");
+        if (hasPendingIdentity()) restoreSession();
+        if (!hasDirectPermission()) throw new Failure(restoreIssue.isEmpty() ? "sign_in_required" : restoreIssue);
         if (System.currentTimeMillis() >= expiresAt - 30000) refresh();
         if (!hasDirectPermission()) throw new Failure("sign_in_required");
         return session.getString("access_token");
@@ -161,17 +205,21 @@ final class SubscriptionProbeClient implements Closeable {
             if (System.currentTimeMillis() < allowed) throw new Failure("refresh_not_due");
         }
         JSONObject old = session;
-        // Single worker serializes rotation. A failed validation requires a new sign-in; no old-token retry.
-        try {
-            JSONObject next = json("POST", discover().getString("token_endpoint"), form(fields(
-                "grant_type", "refresh_token", "client_id", clientId, "refresh_token", old.getString("refresh_token"),
-                "resource", RESOURCE)), "application/x-www-form-urlencoded", null);
-            install(next, null, true); return "令牌刷新并验证身份成功。";
-        } catch (Exception e) { session = null; throw e; }
+        synchronized (credentialState) {
+            check(); journal.refreshInFlight(clientId, subject); session = null; savedRecord = null;
+            restoreIssue = "refresh_interrupted_sign_in_required";
+        }
+        // Never resend this rotating grant. A received response is checkpointed before identity checks.
+        JSONObject next = json("POST", discover().getString("token_endpoint"), form(fields(
+            "grant_type", "refresh_token", "client_id", clientId, "refresh_token", old.getString("refresh_token"),
+            "resource", RESOURCE)), "application/x-www-form-urlencoded", null);
+        install(next, null, true, old); return "令牌刷新、身份验证及加密保存成功。";
     }
     String signOut() {
         diagnostics.mark(ProbeDiagnostics.Stage.REVOKE);
-        JSONObject old = session; session = null;
+        JSONObject old = session;
+        try { clearSavedSession(); restoreIssue = ""; }
+        catch (Exception e) { session = null; return "本地凭据清理未确认，请清除应用数据后重新登录。"; }
         if (old == null || old.optString("refresh_token").isEmpty()) return "已清除本地会话；注册与 host ID 保留。";
         try {
             try (Response response = http.execute("POST", discover().getString("revocation_endpoint"),
@@ -211,7 +259,7 @@ final class SubscriptionProbeClient implements Closeable {
     }
     static String boundedLineOrNull(InputStream in, int limit) throws Exception { return LoopbackReceiver.line(in, limit); }
     @Override public void close() {
-        closed = true; session = null;
+        synchronized (credentialState) { closed = true; session = null; }
         http.close();
         LoopbackReceiver s = listener; if (s != null) try { s.close(); } catch (IOException ignored) {}
     }

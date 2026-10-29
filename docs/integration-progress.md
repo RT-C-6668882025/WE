@@ -44,3 +44,6 @@ AndroidPdfViewer 当前 Maven Central 的 dev.zwander:pdfviewer:5.0.0 AAR 实测
 ## v0.3.0：订阅模型功能收口
 
 暂停其他功能扩展，订阅模型目录名称/ID、文字与图片选择、设置内调用测试、主界面转写/回答与PDF入口统一配置。统一自动刷新与安全错误指引，退出清理目录/测试状态并修正旧登录结果残留。增加直接视觉识别开关、生产设置页Robolectric保存/重建测试与跨模型调用契约测试。功能及仍未完成的能力见 [subscription-readiness.md](subscription-readiness.md)。
+
+## v0.3.1：持久登录缺口修复
+不再仅存内存。增加Keystore加密原子会话存储、启动恢复、持久化刷新journal、pending身份恢复和明确退出删除；同一构建新增真实Android强制停止后的恢复测试，发布等待设备检查。详见 [subscription-persistence.md](subscription-persistence.md)。

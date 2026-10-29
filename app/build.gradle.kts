@@ -29,6 +29,7 @@ android {
         targetSdk = 34
         versionCode = 2
         versionName = "1.0.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 可选的局域网降级识别通道默认地址：开源版留空，用户如自建 Mac 端 server.py
         // 可在设置里填（不填则纯走 ML Kit 本地识别 + 用户配置的大模型）。
         buildConfigField("String", "DEFAULT_FALLBACK_ASK_URL", "\"\"")
@@ -48,8 +49,8 @@ android {
     buildTypes {
         debug {
             // Isolate the subscription probe from an installed production Moling.
-            applicationIdSuffix = ".aipaper.models30"
-            versionNameSuffix = "-paper.0.3.0"
+            applicationIdSuffix = ".aipaper.persist31"
+            versionNameSuffix = "-paper.0.3.1"
         }
         release {
             // 不开混淆：华为手写框架（HWEditView/EPDCDevice）全靠反射触达，
@@ -98,6 +99,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.13")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
     // JVM 单测里要用真的 org.json（android.jar 里的是 Stub!）
     testImplementation("org.json:json:20240303")
 }

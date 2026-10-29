@@ -4,7 +4,7 @@ import android.content.Context;
 import java.util.List;
 import org.json.JSONObject;
 
-/** One application-scoped session; all grants and requests serialized. Credentials stay in RAM. */
+/** One application-scoped session; all grants and requests serialized. Credentials are restored from encrypted no-backup storage. */
 public final class SubscriptionGateway implements SubscriptionConnection {
     public interface Browser { void open(String url); }
     private static SubscriptionGateway instance;
@@ -52,7 +52,32 @@ public final class SubscriptionGateway implements SubscriptionConnection {
             login.finish(ticket, result);
         });
     }
-    private SubscriptionGateway(Context context) { this.context = context; client = new SubscriptionProbeClient(context); }
+    private SubscriptionGateway(Context context) {
+        this.context = context; client = new SubscriptionProbeClient(context);
+        authorized = client.hasDirectPermission();
+        if (authorized) login.record("已恢复本机保存的订阅登录。");
+        else if (client.hasPendingIdentity()) startRestore();
+        else if (!client.restoreIssue().isEmpty()) login.record("保存的登录需要处理：" + client.restoreIssue());
+    }
+    public synchronized String restoreSavedSession() throws Exception {
+        client.beginOperation();
+        try { return client.restoreSession(); }
+        finally { synchronized (state) { authorized = client.hasDirectPermission(); } }
+    }
+    private void startRestore() {
+        final long ticket = login.start(); final SubscriptionProbeClient owner = client;
+        authorization.execute(() -> {
+            String result;
+            try {
+                synchronized (this) {
+                    if (!login.isCurrent(ticket) || owner != client) return;
+                    result = restoreSavedSession();
+                }
+            } catch (SubscriptionProtocol.Failure e) { result = "恢复未完成：" + e.code + "。可点击恢复保存的登录重试身份校验。"; }
+            catch (Exception e) { result = "恢复未完成，请重试或重新登录。"; }
+            login.finish(ticket, result);
+        });
+    }
     public boolean isAuthorized() { return authorized; }
     public String diagnostics() { return client.diagnostics(); }
     public synchronized String signIn(Browser browser) throws Exception { return signIn(client, browser); }
@@ -91,8 +116,12 @@ public final class SubscriptionGateway implements SubscriptionConnection {
             login.cancel();
             authorized = false; catalog = java.util.Collections.emptyList(); checks.clear();
             SubscriptionProbeClient old = client;
-            client = new SubscriptionProbeClient(context);
             old.close();
+            boolean cleared = true;
+            try { old.clearSavedSession(); }
+            catch (Exception e) { cleared = false; login.record("取消后凭据清理未确认，请清除应用数据。"); }
+            client = new SubscriptionProbeClient(context);
+            if (!cleared) client.close();
         }
     }
 }

@@ -42,7 +42,7 @@ class SubscriptionSettingsActivity : Activity() {
         fun label(text: String, size: Float = 15f) = TextView(this).apply { this.text = text; textSize = size; root.addView(this) }
         label("ChatGPT 订阅模型", 24f)
         label("版本：${com.opc.baize.BuildConfig.VERSION_NAME}", 12f)
-        label("列表来自当前账号，不内置固定模型。文字和图片/手写可分别选择；图片能力以实际测试为准。令牌仅存内存，进程结束后需重新登录。")
+        label("列表来自当前账号，不内置固定模型。文字和图片/手写可分别选择；图片能力以实际测试为准。登录信息通过 Android Keystore 加密保存在本机，退出页面或重启应用会恢复；明确退出登录会删除本地凭据。")
         session = label(""); active = label("")
         status = label("先登录，再刷新列表、选择模型并保存。已有会话不必重复登录。").apply { setTextIsSelectable(true) }
         button(root, "Continue with ChatGPT") { gateway.startSignIn(); observedLogin = -1; update() }
@@ -90,6 +90,7 @@ class SubscriptionSettingsActivity : Activity() {
             }
         }
         label("测试使用当前下拉选择；只有点击保存才会更改主界面正在使用的模型。")
+        action(root, "恢复保存的登录 / 重试身份校验") { gateway.restoreSavedSession() }
         action(root, "刷新登录令牌（接近过期时）") { gateway.refreshSession() }
         action(root, "退出并撤销订阅会话") { gateway.signOut() }
         cancel = Button(this).apply { text = "取消正在进行的授权"; setOnClickListener { gateway.cancel(); observedLogin = -1; update() } }; root.addView(cancel)
