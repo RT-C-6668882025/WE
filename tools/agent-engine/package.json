@@ -1,0 +1,17 @@
+{
+  "name": "we-agent-engine",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "node setup.mjs",
+    "probe": "node probe.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "opencode-ai": "1.2.27"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "zod": "4.6.7"
+  }
+}

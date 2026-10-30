@@ -90,6 +90,11 @@ class SubscriptionSettingsActivity : Activity() {
             }
         }
         label("测试使用当前下拉选择；只有点击保存才会更改主界面正在使用的模型。")
+        label("Skill / MCP 引擎连接", 20f)
+        label("连接电脑上的 OpenCode，复用当前订阅登录。手动开启，仅监听本机；通过 ADB 转发连接。此阶段需保持应用运行，尚未集成纸面工具。")
+        action(root, "开启 Skill / MCP 引擎连接") { gateway.startAgentBridge() }
+        button(root, "查看引擎连接信息") { status.text = gateway.agentBridgeInfo() }
+        button(root, "关闭引擎连接") { gateway.stopAgentBridge(); status.text = gateway.agentBridgeInfo() }
         action(root, "恢复保存的登录 / 重试身份校验") { gateway.restoreSavedSession() }
         action(root, "刷新登录令牌（接近过期时）") { gateway.refreshSession() }
         action(root, "退出并撤销订阅会话") { gateway.signOut() }

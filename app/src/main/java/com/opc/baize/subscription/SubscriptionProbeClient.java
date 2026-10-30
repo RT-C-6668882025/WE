@@ -189,6 +189,19 @@ final class SubscriptionProbeClient implements Closeable {
             return stream.finish();
         } catch (IOException e) { throw http.failure(e); }
     }
+    /** Raw Responses channel for an external engine; never flattens tool or reasoning items. */
+    AgentSubscriptionBridge.Upstream openAgentResponse(JSONObject requestBody) throws Exception {
+        String access = token(); diagnostics.mark(ProbeDiagnostics.Stage.INFERENCE);
+        Response response = http.execute("POST", RESOURCE + "/responses", requestBody.toString(),
+            "application/json", access, "text/event-stream");
+        try {
+            requireSuccess(response);
+            String type = response.header("Content-Type", "");
+            if (!type.toLowerCase(Locale.ROOT).startsWith("text/event-stream") || response.body() == null)
+                throw new Failure("invalid_stream_content_type");
+            return new AgentSubscriptionBridge.Upstream(response.body().byteStream(), response);
+        } catch (Exception e) { response.close(); throw e; }
+    }
     String refresh() throws Exception {
         diagnostics.mark(ProbeDiagnostics.Stage.REFRESH);
         check();

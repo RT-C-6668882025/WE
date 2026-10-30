@@ -50,7 +50,7 @@ android {
         debug {
             // Isolate the subscription probe from an installed production Moling.
             applicationIdSuffix = ".aipaper.persist32"
-            versionNameSuffix = "-paper.0.3.2"
+            versionNameSuffix = "-paper.0.4.0-bridge"
         }
         release {
             // 不开混淆：华为手写框架（HWEditView/EPDCDevice）全靠反射触达，
@@ -87,6 +87,8 @@ android {
 }
 
 dependencies {
+    // BSD-3-Clause, reused HTTP parser/server; no handwritten HTTP framing.
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     // Shared, validated subscription transport.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // 识别主通道：ML Kit Digital Ink（直接吃笔画轨迹，不走图片大模型）

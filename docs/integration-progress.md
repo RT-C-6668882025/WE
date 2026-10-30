@@ -49,3 +49,11 @@ AndroidPdfViewer 当前 Maven Central 的 dev.zwander:pdfviewer:5.0.0 AAR 实测
 不再仅存内存。增加Keystore加密原子会话存储、启动恢复、持久化刷新journal、pending身份恢复和明确退出删除；同一构建新增真实Android强制停止后的恢复测试，发布等待设备检查。详见 [subscription-persistence.md](subscription-persistence.md)。
 
 v0.3.2 同步修正主设置和隐藏验证页的旧内存会话提示，持久化及强停恢复检查保持不变。
+
+## v0.4.0 bridge：复用现成 Skill / MCP 引擎
+
+保留原订阅授权与持久化，新增手动开启的 NanoHTTPD loopback Responses 通道。OpenCode 1.2.27 通过 ADB 转发连接，完整复用 Skills、MCP、Agent 工具循环；订阅令牌不离开 Android。原文字/图片接口继续使用原路径。
+
+本地真实 HTTP 测试已通过；真实 OpenCode + MCP SDK + 生产桥接类也已通过“加载 Skill → MCP 加法 → 回传结果 → 最终回答”的完整合同测试，模型响应为合成 fixture。真实订阅账号工具调用需运行设备探针，未标记通过。Android 完整构建由新增 CI 执行，本机 Gradle 下载失败，未据此宣称 Android 构建成功。
+
+当前仍是电脑侧引擎连接原型，不包含原生 Skill 管理器、纸面工具、工作区 UI 或生成排版。详情和复用来源见 [agent-engine-bridge.md](agent-engine-bridge.md)。
