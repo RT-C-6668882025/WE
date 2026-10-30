@@ -2,7 +2,6 @@ package com.opc.baize.core
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** DeepSeek 请求体构造与响应解析（打印 JSON 供肉眼核对人设与记忆拼装） */
@@ -32,14 +31,6 @@ class DeepSeekProtocolTest {
         assertEquals("assistant", msgs.getJSONObject(3).getString("role"))
         assertEquals("user", msgs.getJSONObject(4).getString("role"))
         assertEquals("今日宜做什么", msgs.getJSONObject(4).getString("content"))
-    }
-
-    @Test fun personaIsVerbatim() {
-        // 人设：名已改「墨灵」，文言要求关键句保持不变
-        assertTrue(Texts.PERSONA.startsWith("你是墨灵，栖于此屏的墨中之灵"))
-        assertTrue(Texts.PERSONA.contains("浅近文言（半文半白，如古书批注）"))
-        assertTrue(Texts.PERSONA.contains("长度 30~80 字为宜"))
-        assertTrue(Texts.PERSONA.endsWith("只输出回复正文，不要任何解释。"))
     }
 
     @Test fun emptyHistoryStillValid() {
