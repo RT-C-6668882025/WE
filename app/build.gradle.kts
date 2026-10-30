@@ -50,7 +50,7 @@ android {
         debug {
             // Isolate the subscription probe from an installed production Moling.
             applicationIdSuffix = ".aipaper.persist32"
-            versionNameSuffix = "-paper.0.3.2"
+            versionNameSuffix = "-paper.0.4.0-native"
         }
         release {
             // 不开混淆：华为手写框架（HWEditView/EPDCDevice）全靠反射触达，
@@ -84,9 +84,17 @@ android {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
     }
+    sourceSets {
+        getByName("test").java.srcDir("src/sharedTest/java")
+        getByName("androidTest").java.srcDir("src/sharedTest/java")
+    }
 }
 
 dependencies {
+    // MIT: embedded Android/JVM agent loop, Skills, workspace and MCP client.
+    implementation("cc.noharry:agent-runtime-android:0.3.0")
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
     // Shared, validated subscription transport.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // 识别主通道：ML Kit Digital Ink（直接吃笔画轨迹，不走图片大模型）
@@ -103,4 +111,6 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     // JVM 单测里要用真的 org.json（android.jar 里的是 Stub!）
     testImplementation("org.json:json:20240303")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }

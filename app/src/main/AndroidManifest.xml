@@ -16,6 +16,7 @@
              targetSdk 34 默认禁明文，故显式放开 -->
 
         <activity android:name=".paper.PaperActivity" android:exported="false" />
+        <activity android:name=".agent.AgentWorkspaceActivity" android:exported="false" />
         <activity android:name=".subscription.SubscriptionSettingsActivity" android:exported="false" />
         <activity
             android:name=".MainActivity"

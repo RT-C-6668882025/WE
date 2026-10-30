@@ -189,6 +189,28 @@ final class SubscriptionProbeClient implements Closeable {
             return stream.finish();
         } catch (IOException e) { throw http.failure(e); }
     }
+    String agentResponse(JSONObject requestBody) throws Exception {
+        String access = token(); diagnostics.mark(ProbeDiagnostics.Stage.INFERENCE);
+        try (Response response = http.execute("POST", RESOURCE + "/responses", requestBody.toString(),
+                "application/json", access, "text/event-stream")) {
+            requireSuccess(response);
+            if (!response.header("Content-Type", "").toLowerCase(Locale.ROOT).startsWith("text/event-stream") || response.body() == null)
+                throw new Failure("invalid_stream_content_type");
+            Stream validator = new Stream();
+            StringBuilder wire = new StringBuilder();
+            InputStream in = new BufferedInputStream(response.body().byteStream());
+            while (!validator.completed) {
+                check();
+                String line = boundedLineOrNull(in, 2 * 1024 * 1024);
+                if (line == null) break;
+                wire.append(line).append('\n');
+                if (wire.length() > 16 * 1024 * 1024) throw new Failure("output_too_large");
+                validator.line(line);
+            }
+            validator.finish(); // Interrupted/failed responses must never execute partial tool calls.
+            return wire.toString();
+        } catch (IOException e) { throw http.failure(e); }
+    }
     String refresh() throws Exception {
         diagnostics.mark(ProbeDiagnostics.Stage.REFRESH);
         check();

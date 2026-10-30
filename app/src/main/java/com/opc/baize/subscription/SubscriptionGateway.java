@@ -106,6 +106,23 @@ public final class SubscriptionGateway implements SubscriptionConnection {
             synchronized (state) { if (owner == client) authorized = owner.hasDirectPermission(); }
         }
     }
+    /** In-process Agent transport: complete SSE, including tool calls; never exports OAuth tokens. */
+    public synchronized String agentResponse(String requestJson) throws Exception {
+        client.beginOperation();
+        if (!authorized) throw new SubscriptionProtocol.Failure("sign_in_required");
+        if (requestJson.length() > 8 * 1024 * 1024) throw new SubscriptionProtocol.Failure("body_too_large");
+        JSONObject request = new JSONObject(requestJson);
+        if (!request.optBoolean("stream") || request.optBoolean("background") || request.has("previous_response_id"))
+            throw new SubscriptionProtocol.Failure("stateless_stream_required");
+        request.put("store", false);
+        String model = request.optString("model");
+        boolean known = false;
+        for (ModelCatalog.Entry entry : catalog.isEmpty() ? catalog() : catalog) if (entry.id.equals(model)) known = true;
+        if (!known) throw new SubscriptionProtocol.Failure("model_not_found");
+        SubscriptionProbeClient owner = client;
+        try { return owner.agentResponse(request); }
+        finally { synchronized (state) { if (owner == client) authorized = owner.hasDirectPermission(); } }
+    }
     public synchronized String signOut() {
         authorized = false; catalog = java.util.Collections.emptyList(); checks.clear();
         String result = client.signOut(); login.record(result); return result;
