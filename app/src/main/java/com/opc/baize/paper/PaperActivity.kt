@@ -36,6 +36,7 @@ class PaperActivity : Activity() {
     private var submitting = false
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var autoRecognize = false
+    private var interactionVersion = 0L
     private var workspaceId: String? = null
     private val recognizeLater = Runnable {
         if (!submitting && !loading && !destroyed) submit(RECOGNIZE, true)
@@ -77,7 +78,7 @@ class PaperActivity : Activity() {
                 catch (e: Exception) { message("笔迹保存失败，请暂勿退出或翻页。") }
             }
         }
-        ink.strokeStarted = { handler.removeCallbacks(recognizeLater) }
+        ink.strokeStarted = { interactionVersion++; handler.removeCallbacks(recognizeLater) }
         val recognition = row()
         button(recognition, "识别选区 / 整页") { submit(RECOGNIZE) }
         recognition.addView(Switch(this).apply {
@@ -141,6 +142,8 @@ class PaperActivity : Activity() {
     }
     private fun load(id: String, requestedPage: Int) {
         if (loading || destroyed) return
+        handler.removeCallbacks(recognizeLater)
+        interactionVersion++
         loading = true; ink.isEnabled = false; status.text = "正在读取 PDF 和笔迹……"
         io.execute {
             try {
@@ -178,7 +181,7 @@ class PaperActivity : Activity() {
         val provider = SubscriptionSelection.provider(this, image = true)
         if (!provider.isReady()) { status.text = "请返回墨灵设置登录 ChatGPT 并选择模型。"; return }
         val (bitmap, data, region) = ink.snapshot()
-        val id = document!!; val index = pageIndex; val workspace = workspaceId
+        val id = document!!; val index = pageIndex; val workspace = workspaceId; val interaction = interactionVersion
         val regionJson = JSONObject().put("left", region.left).put("top", region.top).put("right", region.right).put("bottom", region.bottom).toString()
         submitting = true; status.text = "正在提交第 ${index + 1} 页版本 ${data.revision}；可继续书写。"
         val snapshotName = "submission-${java.util.UUID.randomUUID()}"
@@ -196,7 +199,7 @@ class PaperActivity : Activity() {
                 }
                 runOnUiThread { if (!destroyed) {
                     status.text = "批改完成：第 ${index + 1} 页版本 ${data.revision}。后续笔迹不属于本次批改。"
-                    if (!automatic || (document == id && pageIndex == index && ink.page.revision == data.revision)) {
+                    if (!automatic || (document == id && pageIndex == index && ink.page.revision == data.revision && interactionVersion == interaction)) {
                         val dialog = AlertDialog.Builder(this).setTitle("识别 / 批改结果 · 版本 ${data.revision}")
                             .setMessage(answer).setPositiveButton("关闭", null)
                         if (workspace != null) dialog.setNeutralButton("带回工作区继续") { _, _ ->

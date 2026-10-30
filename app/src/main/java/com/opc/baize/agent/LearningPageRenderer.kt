@@ -31,7 +31,7 @@ object LearningPageRenderer {
                 page.canvas.clipRect(0, top, 504, bottom)
                 layout.draw(page.canvas); page.canvas.restore()
                 val footer = TextPaint(paint).apply { textSize = 10f; color = Color.GRAY }
-                page.canvas.drawText("WE · ${number - 1}", 48f, 814f, footer)
+                page.canvas.drawText("WE · ${number - 1} · ${destination.nameWithoutExtension.takeLast(12)}", 48f, 814f, footer)
                 document.finishPage(page); first = end
             }
             destination.parentFile?.mkdirs()

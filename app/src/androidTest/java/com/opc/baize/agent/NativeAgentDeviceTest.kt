@@ -33,6 +33,52 @@ class NativeAgentDeviceTest {
             val blank = java.io.File(folder, "blank.pdf")
             LearningPageRenderer.render(null, blank, true)
             com.opc.baize.paper.AndroidPdfEngine(blank).use { org.junit.Assert.assertEquals(1, it.pageCount) }
+            val other = java.io.File(folder, "another-blank.pdf")
+            LearningPageRenderer.render(null, other, true)
+            org.junit.Assert.assertNotEquals(repository.importPdf(android.net.Uri.fromFile(blank)), repository.importPdf(android.net.Uri.fromFile(other)))
         } finally { folder.deleteRecursively() }
+    }
+    @Test fun workspacePaperOpensAndTouchInkSurvivesReopening() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val workspace = WorkspaceFiles(context).create("device-paper-${java.util.UUID.randomUUID()}")
+        val pdf = java.io.File(workspace.root, "memory/pages/device-paper.pdf")
+        LearningPageRenderer.render(null, pdf, true)
+        val activity = instrumentation.startActivitySync(android.content.Intent(context, com.opc.baize.paper.PaperActivity::class.java)
+            .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.path)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        try {
+            val target = java.util.concurrent.atomic.AtomicReference<com.opc.baize.paper.PaperInkView>()
+            fun find(view: android.view.View): com.opc.baize.paper.PaperInkView? {
+                if (view is com.opc.baize.paper.PaperInkView) return view
+                if (view is android.view.ViewGroup) for (index in 0 until view.childCount) find(view.getChildAt(index))?.let { return it }
+                return null
+            }
+            repeat(100) {
+                instrumentation.runOnMainSync {
+                    val view = find(activity.window.decorView)
+                    if (view?.page?.width == 600 && view.isEnabled) target.set(view)
+                }
+                if (target.get() == null) android.os.SystemClock.sleep(100)
+            }
+            org.junit.Assert.assertNotNull("Generated page did not open", target.get())
+            instrumentation.runOnMainSync {
+                val view = target.get()
+                val now = android.os.SystemClock.uptimeMillis()
+                // Write at the fitted page centre, independent of device screen size.
+                val x = view.width / 2f; val y = view.height / 2f
+                for ((action, offset) in listOf(android.view.MotionEvent.ACTION_DOWN to 0f, android.view.MotionEvent.ACTION_UP to 20f)) {
+                    val event = android.view.MotionEvent.obtain(now, now + offset.toLong(), action, x + offset, y, 0)
+                    try { view.onTouchEvent(event) } finally { event.recycle() }
+                }
+                org.junit.Assert.assertEquals(1L, view.page.revision)
+                org.junit.Assert.assertEquals(1, view.page.strokes.size)
+            }
+            com.opc.baize.paper.PaperIo.executor.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+            val repository = com.opc.baize.paper.PaperRepository(context)
+            val id = repository.importPdf(android.net.Uri.fromFile(pdf))
+            org.junit.Assert.assertEquals(1, repository.load(id, 0, 600, 840).strokes.size)
+            org.junit.Assert.assertEquals(workspace.id, context.getSharedPreferences("moling", 0).getString("paper_workspace_$id", null))
+        } finally { instrumentation.runOnMainSync { activity.finish() }; workspace.container.deleteRecursively() }
     }
 }
