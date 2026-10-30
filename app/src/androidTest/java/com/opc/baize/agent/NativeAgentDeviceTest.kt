@@ -57,7 +57,7 @@ class NativeAgentDeviceTest {
             repeat(100) {
                 instrumentation.runOnMainSync {
                     val view = find(activity.window.decorView)
-                    if (view?.page?.width == 600 && view.isEnabled) target.set(view)
+                    if (view?.page?.width == 600 && view.isEnabled && view.width > 0 && view.height > 0) target.set(view)
                 }
                 if (target.get() == null) android.os.SystemClock.sleep(100)
             }
