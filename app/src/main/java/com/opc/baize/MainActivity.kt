@@ -25,6 +25,14 @@ import com.opc.baize.core.SessionMemory
 import com.opc.baize.core.Texts
 import com.opc.baize.core.Turn
 import com.opc.baize.core.TouchGate
+import com.opc.baize.model.AnthropicModelProvider
+import com.opc.baize.model.SubscriptionModelProvider
+import com.opc.baize.model.ModelProvider
+import com.opc.baize.model.HandwritingRecognition
+import com.opc.baize.model.SubscriptionSelection
+import com.opc.baize.subscription.SubscriptionErrors
+import com.opc.baize.subscription.SubscriptionGateway
+import com.opc.baize.subscription.SubscriptionSettingsActivity
 import com.opc.baize.net.DeepSeekClient
 import com.opc.baize.net.FallbackClient
 import com.opc.baize.net.MlKitRecognizer
@@ -199,7 +207,7 @@ class MainActivity : Activity() {
     private fun showFirstRunGuide() {
         AlertDialog.Builder(this)
             .setTitle("欢迎使用墨灵")
-            .setMessage("墨灵是一枚栖于墨水屏中的墨中之灵。\n\n请先配置大模型 API，方能应答手写之问。")
+            .setMessage("墨灵是一枚栖于墨水屏中的墨中之灵。\n\n请先在设置中登录 ChatGPT 订阅或配置原 API，方能应答手写之问。")
             .setPositiveButton("去设置") { _, _ ->
                 prefs.edit().putBoolean("firstRunDone", true).apply()
                 showPanel(TAB_SETTINGS)
@@ -216,8 +224,11 @@ class MainActivity : Activity() {
         if (hasFocus) applyImmersive()
     }
 
+    private var providerSelector: android.widget.Spinner? = null
+
     override fun onResume() {
         super.onResume()
+        providerSelector?.setSelection(if (prefs.getString("model_provider", "anthropic") == "subscription") 1 else 0)
         // 回前台：HWEditView 重新进手写态，恢复驱动直写（onPause 时已退出）。
         hwLayer?.enterHandwriteState()
         // 直写模式：回前台启动轮询停笔检测（onPause 已停）。
@@ -687,18 +698,14 @@ class MainActivity : Activity() {
         dataUrl: String?,
     ) {
         // —— 识别段 ——
-        val recognized: String = if (recognizer.brokenForever) {
-            // 无 GMS：整轮（含低笔画）交给 Mac 端，它自带 OCR 误触闸
-            fallbackRound(dataUrl, snapshot.size)
-            return
-        } else {
-            try {
+        val recognized = HandwritingRecognition.recognize(
+            local = {
+                if (recognizer.brokenForever) throw IllegalStateException("local_recognition_unavailable")
                 recognizer.recognize(snapshot)
-            } catch (t: Throwable) {
-                fallbackRound(dataUrl, snapshot.size)
-                return
-            }
-        }
+            },
+            unavailable = { recognizeUnavailable(dataUrl, snapshot.size) },
+            directVision = prefs.getString("model_provider", "anthropic") == "subscription" && SubscriptionSelection.read(this).directVision
+        ) ?: return
 
         // —— 误触闸第二级：低笔画只认短而明确的结果 ——
         if (gate == TouchGate.Action.LOCAL_ONLY && !TouchGate.acceptLowStroke(recognized)) {
@@ -726,11 +733,12 @@ class MainActivity : Activity() {
         }
 
         // —— 大模型未配置：兜底提示，不烧请求、不崩 ——
-        val cfg = modelConfig()
-        if (!cfg.isReady()) {
+        val subscription = prefs.getString("model_provider", "anthropic") == "subscription"
+        val provider: ModelProvider = if (subscription) SubscriptionSelection.provider(this) else AnthropicModelProvider(modelConfig())
+        if (!provider.isReady()) {
             ui.post { blinkSealTwice() }   // 印章闪两下，提示去设置填 API
             uiWriteAndWait { done ->
-                book.writeAnimated("fail", ModelConfig.NOT_CONFIGURED_TIP, false, done)
+                book.writeAnimated("fail", if (subscription) "请在设置中登录 ChatGPT 并选择订阅模型。" else ModelConfig.NOT_CONFIGURED_TIP, false, done)
             }
             return
         }
@@ -742,14 +750,40 @@ class MainActivity : Activity() {
         // —— 回显 + 大模型文言回复（重试 1 次） ——
         ui.post { book.appendInstant("you", "你写道：$recognized") }
         val reply = try {
-            deepseek.reply(cfg, memory.history(), recognized)
+            provider.reply(memory.history(), recognized)
         } catch (t: Throwable) {
-            uiWriteAndWait { done -> failOnPage(done) }
+            uiWriteAndWait { done ->
+                if (subscription && t is Exception) book.writeAnimated("fail", "订阅回答未完成：" + SubscriptionErrors.describe(t), false, done)
+                else failOnPage(done)
+            }
             return
         }
         memory.remember(recognized, reply)
         recordTurn(recognized, reply)   // 记入当前会话历史并落盘
         uiWriteAndWait { done -> book.writeAnimated("book", reply, true, done) }
+    }
+
+    /** Missing local recognizer uses vision only when the user selected the subscription route. */
+    private fun recognizeUnavailable(dataUrl: String?, strokeCount: Int): String? {
+        if (prefs.getString("model_provider", "anthropic") != "subscription") {
+            fallbackRound(dataUrl, strokeCount)
+            return null
+        }
+        val provider = SubscriptionSelection.provider(this, image = true)
+        if (!provider.isReady()) {
+            uiWriteAndWait { done -> book.writeAnimated("fail", "请在设置中登录 ChatGPT、获取模型并点击使用所选模型，方可识别此机手写。", false, done) }
+            return null
+        }
+        if (dataUrl == null) {
+            uiWriteAndWait { done -> book.writeAnimated("fail", "未取得本次笔迹图片，请重新书写。", false, done) }
+            return null
+        }
+        return try {
+            provider.recognizeInk(dataUrl)
+        } catch (e: Exception) {
+            uiWriteAndWait { done -> book.writeAnimated("fail", "订阅手写识别未完成：" + SubscriptionErrors.describe(e), false, done) }
+            null
+        }
     }
 
     /** 降级轮：POST 自建 /api/ask，直接用它的 reply（跳过本地大模型调用） */
@@ -1122,6 +1156,29 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
+        col.addView(android.widget.Button(this).apply {
+            text = "PDF 练习工作区"
+            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, com.opc.baize.paper.PaperActivity::class.java)) }
+        })
+        col.addView(android.widget.Button(this).apply {
+            text = "WE 工作区 · Skill / MCP"
+            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, com.opc.baize.agent.AgentWorkspaceActivity::class.java)) }
+        })
+        col.addView(sectionTitle("模型通道"))
+        val providerChoices = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("原 API（Anthropic 兼容）", "ChatGPT 订阅"))
+            setSelection(if (prefs.getString("model_provider", "anthropic") == "subscription") 1 else 0)
+        }
+        providerSelector = providerChoices
+        col.addView(providerChoices)
+        col.addView(android.widget.Button(this).apply {
+            text = "ChatGPT 登录与模型选择"
+            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, SubscriptionSettingsActivity::class.java)) }
+        })
+        col.addView(hint("订阅登录会在本机加密保存，重启应用后恢复。切换原 API 沿用下方配置，不自动跨通道扣费。"))
+        gap(12f)
+
         // (b) 大模型 API 设置
         col.addView(sectionTitle("大模型 API"))
         gap(8f)
@@ -1188,13 +1245,14 @@ class MainActivity : Activity() {
         }
         col.addView(fallbackEdit)
         gap(6f)
-        col.addView(hint("设备无 Google 服务时本机识别不可用，可自建识别服务（server.py）填其地址。"))
+        col.addView(hint("优先本机识别；本机不可用且已启用 ChatGPT 订阅时，自动用所选模型转写笔迹图片（使用订阅额度）。原 API 用户可自建识别服务。"))
         gap(14f)
 
         val saveBtn = android.widget.Button(this).apply {
             text = "保存"
             setOnClickListener {
                 prefs.edit()
+                    .putString("model_provider", if (providerChoices.selectedItemPosition == 1) "subscription" else "anthropic")
                     .putString("api_key", keyEdit.text.toString().trim())
                     .putString("api_endpoint", endpointEdit.text.toString().trim()
                         .ifEmpty { ModelConfig.DEFAULT_ENDPOINT })
