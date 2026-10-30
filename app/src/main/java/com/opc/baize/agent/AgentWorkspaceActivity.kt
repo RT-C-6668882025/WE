@@ -92,6 +92,7 @@ class AgentWorkspaceActivity : Activity() {
         output.append("\n你：$text\n")
         job = scope.launch {
             val answer = StringBuilder()
+            var lastTool = ""
             try {
                 val model = SubscriptionSelection.read(this@AgentWorkspaceActivity).textModel
                 if (runtime == null || runtimeWorkspace != workspace.id + model) {
@@ -107,8 +108,11 @@ class AgentWorkspaceActivity : Activity() {
                             if (answer.isNotEmpty()) output.append("\n")
                             answer.clear(); answer.append(event.result.response); output.append(event.result.response)
                         }
-                        is AgentEvent.NativeToolCallStarted -> output.append("\n[${event.toolName}]\n")
-                        is AgentEvent.ConfirmationRequired -> confirm(owner, event.pending)
+                        is AgentEvent.NativeToolCallStarted -> {
+                            lastTool = event.toolName + "\n" + event.arguments.take(2000)
+                            output.append("\n[${event.toolName}]\n")
+                        }
+                        is AgentEvent.ConfirmationRequired -> confirm(owner, event.pending, lastTool)
                         is AgentEvent.Failed -> { output.append("\n任务未完成：${event.code}"); error(event.code) }
                         else -> Unit
                     }
@@ -125,11 +129,11 @@ class AgentWorkspaceActivity : Activity() {
             finally { controls.forEach { it.isEnabled = true } }
         }
     }
-    private fun confirm(owner: AgentRuntime, pending: PendingConfirmation) {
+    private fun confirm(owner: AgentRuntime, pending: PendingConfirmation, tool: String) {
         fun decide(choice: ConfirmationChoice) { scope.launch {
             owner.resumeConfirmation(ConfirmationDecision(pending.pendingId, UUID.randomUUID().toString(), choice))
         } }
-        AlertDialog.Builder(this).setTitle("工具操作").setMessage(pending.prompt.ifBlank { pending.toolName ?: "是否执行此操作？" })
+        AlertDialog.Builder(this).setTitle("工具操作").setMessage(tool.ifBlank { "运行时请求继续当前任务，是否执行？" })
             .setPositiveButton("执行") { _, _ -> decide(ConfirmationChoice.APPROVE) }
             .setNegativeButton("取消") { _, _ -> decide(ConfirmationChoice.DENY) }
             .setOnCancelListener { decide(ConfirmationChoice.DENY) }.show()

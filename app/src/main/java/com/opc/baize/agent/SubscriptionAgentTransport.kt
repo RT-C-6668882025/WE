@@ -16,7 +16,7 @@ class SubscriptionAgentTransport(
     private val journal = AtomicFile(checkpointFile)
     private val checkpoints = linkedMapOf<String, JSONObject>()
     init {
-        if (checkpointFile.exists()) {
+        if (checkpointFile.exists() || File(checkpointFile.path + ".bak").exists()) {
             val saved = journal.openRead().use { it.readBytes().toString(Charsets.UTF_8) }
             require(saved.length <= MAX_CHECKPOINT_BYTES) { "agent_checkpoint_too_large" }
             val values = JSONArray(saved)
