@@ -29,7 +29,7 @@ class SubscriptionAgentTransportTest {
         }
         assertFalse(file.exists())
     }
-    @Test fun reasoningAndOriginalCallItemsSurviveTransportRecreation() = runBlocking {
+    @Test fun reasoningAndOriginalCallItemsSurviveTransportRecreation(): Unit = runBlocking {
         val file = File(RuntimeEnvironment.getApplication().cacheDir, "checkpoint-${UUID.randomUUID()}.json")
         val reasoning = JSONObject("""{"type":"reasoning","id":"rs1","encrypted_content":"signed-fixture","summary":[]}""")
         val call = JSONObject("""{"type":"function_call","id":"fc1","call_id":"c1","name":"read_file","arguments":"{}","status":"completed"}""")
@@ -47,6 +47,7 @@ class SubscriptionAgentTransportTest {
             }, file)
             restored.stream(request(JSONArray().put(call).put(JSONObject().put("type", "function_call_output").put("call_id", "c1").put("output", "ok")))).toList()
         } finally { file.delete() }
+        Unit
     }
     private fun request(input: JSONArray) = HttpRequest("POST", "https://api.openai.com/v1/responses",
         body = JSONObject().put("model", "fixture").put("stream", true).put("input", input).toString().toByteArray())
