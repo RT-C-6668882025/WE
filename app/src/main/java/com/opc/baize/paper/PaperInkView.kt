@@ -11,6 +11,8 @@ class PaperInkView(context: Context) : View(context) {
     enum class Mode { WRITE, MOVE, SELECT }
     var mode = Mode.WRITE
     var changed: ((PaperPage) -> Unit)? = null
+    var strokeStarted: (() -> Unit)? = null
+    var stylusOnly = false
     private var image: Bitmap? = null
     var page = PaperPage(1, 1, 0, emptyList()); private set
     private var current = mutableListOf<InkPoint>()
@@ -51,6 +53,7 @@ class PaperInkView(context: Context) : View(context) {
     }
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (image == null || !isEnabled) return false
+        if (stylusOnly && e.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS && e.getToolType(0) != MotionEvent.TOOL_TYPE_ERASER && mode == Mode.WRITE) return true
         parent.requestDisallowInterceptTouchEvent(true)
         if (e.pointerCount > 1) { current.clear(); selecting = false; invalidate(); return true }
         val t = transform()
@@ -58,6 +61,7 @@ class PaperInkView(context: Context) : View(context) {
         val x = t.pageX(e.x).coerceIn(0f, page.width.toFloat()); val y = t.pageY(e.y).coerceIn(0f, page.height.toFloat())
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                strokeStarted?.invoke()
                 lastX = e.x; lastY = e.y; startX = x; startY = y
                 if (mode == Mode.WRITE) current = mutableListOf(InkPoint(x, y, e.pressure, e.eventTime))
                 if (mode == Mode.SELECT) { selecting = true; region = RectF(x, y, x, y) }

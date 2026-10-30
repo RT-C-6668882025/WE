@@ -34,6 +34,12 @@ class PaperActivity : Activity() {
     private var loading = false
     @Volatile private var destroyed = false
     private var submitting = false
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var autoRecognize = false
+    private var workspaceId: String? = null
+    private val recognizeLater = Runnable {
+        if (!submitting && !loading && !destroyed) submit(RECOGNIZE, true)
+    }
     private val prefs by lazy { getSharedPreferences("moling", MODE_PRIVATE) }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); repository = PaperRepository(this)
@@ -63,12 +69,26 @@ class PaperActivity : Activity() {
         ink = PaperInkView(this)
         root.addView(ink, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         ink.changed = { data ->
+            handler.removeCallbacks(recognizeLater)
+            if (autoRecognize) handler.postDelayed(recognizeLater, 1800)
             val id = document; val page = pageIndex
             if (id != null) io.execute {
                 try { repository.save(id, page, data) }
                 catch (e: Exception) { message("笔迹保存失败，请暂勿退出或翻页。") }
             }
         }
+        ink.strokeStarted = { handler.removeCallbacks(recognizeLater) }
+        val recognition = row()
+        button(recognition, "识别选区 / 整页") { submit(RECOGNIZE) }
+        recognition.addView(Switch(this).apply {
+            text = "停笔识别"; setOnCheckedChangeListener { _, enabled ->
+                autoRecognize = enabled; handler.removeCallbacks(recognizeLater)
+                status.text = if (enabled) "停笔 1.8 秒后识别，使用订阅额度。" else "已关闭停笔识别。"
+            }
+        })
+        recognition.addView(Switch(this).apply {
+            text = "仅笔书写"; setOnCheckedChangeListener { _, enabled -> ink.stylusOnly = enabled }
+        })
         val actions = row()
         button(actions, "局部批改") { submit("请用现代中文批改图中的手写作答：指出正确与错误、理由和正确解法；看不清或缺题干时明确说明。") }
         button(actions, "选区解释") { submit("请用现代中文解释图中选区的题目与知识点，给出清晰步骤；信息不足时明确说明。") }
@@ -89,7 +109,21 @@ class PaperActivity : Activity() {
             }
         }
         status = TextView(this).apply { text = "可离线书写。未选区时提交整页；仅手动提交才调用模型。"; textSize = 14f }; root.addView(status)
-        prefs.getString("paper_last_document", null)?.let { load(it, prefs.getInt("paper_last_page", 0)) }
+        val generated = intent.getStringExtra("generatedPdf")
+        workspaceId = intent.getStringExtra("workspace")
+        if (generated != null && workspaceId != null) {
+            loading = true; ink.isEnabled = false
+            io.execute {
+                try {
+                    val workspace = com.opc.baize.agent.WorkspaceFiles(this).list().first { it.id == workspaceId }
+                    val file = java.io.File(generated).canonicalFile
+                    require(file.path.startsWith(workspace.root.canonicalPath + "/") && file.extension == "pdf")
+                    val id = repository.importPdf(android.net.Uri.fromFile(file))
+                    prefs.edit().putString("paper_workspace_$id", workspace.id).apply()
+                    runOnUiThread { if (!destroyed) { loading = false; load(id, 0) } }
+                } catch (e: Exception) { runOnUiThread { if (!destroyed) { loading = false; status.text = "学习页打开失败，原文件已保留。" } } }
+            }
+        } else prefs.getString("paper_last_document", null)?.let { load(it, prefs.getInt("paper_last_page", 0)) }
     }
     @Deprecated("Platform result callback retained to avoid introducing an Activity framework")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -123,6 +157,7 @@ class PaperActivity : Activity() {
                 runOnUiThread {
                     if (destroyed) { result.first.recycle(); return@runOnUiThread }
                     document = id; pageIndex = index; pageCount = count
+                    workspaceId = prefs.getString("paper_workspace_$id", null)
                     ink.load(result.first, result.second); ink.isEnabled = true; loading = false
                     pageLabel.text = "第 ${index + 1} / $count 页 · 笔迹自动保存"
                     prefs.edit().putString("paper_last_document", id).putInt("paper_last_page", index).apply()
@@ -134,7 +169,8 @@ class PaperActivity : Activity() {
             } } }
         }
     }
-    private fun submit(prompt: String) {
+    private fun submit(prompt: String, automatic: Boolean = false) {
+        handler.removeCallbacks(recognizeLater)
         if (loading || document == null || submitting) return
         if (prefs.getString("model_provider", "anthropic") != "subscription") {
             status.text = "图片批改请先在墨灵设置中启用 ChatGPT 订阅。原 API 适配器目前只支持文字。"; return
@@ -142,7 +178,7 @@ class PaperActivity : Activity() {
         val provider = SubscriptionSelection.provider(this, image = true)
         if (!provider.isReady()) { status.text = "请返回墨灵设置登录 ChatGPT 并选择模型。"; return }
         val (bitmap, data, region) = ink.snapshot()
-        val id = document!!; val index = pageIndex
+        val id = document!!; val index = pageIndex; val workspace = workspaceId
         val regionJson = JSONObject().put("left", region.left).put("top", region.top).put("right", region.right).put("bottom", region.bottom).toString()
         submitting = true; status.text = "正在提交第 ${index + 1} 页版本 ${data.revision}；可继续书写。"
         val snapshotName = "submission-${java.util.UUID.randomUUID()}"
@@ -160,19 +196,36 @@ class PaperActivity : Activity() {
                 }
                 runOnUiThread { if (!destroyed) {
                     status.text = "批改完成：第 ${index + 1} 页版本 ${data.revision}。后续笔迹不属于本次批改。"
-                    AlertDialog.Builder(this).setTitle("批改 / 解释结果").setMessage(answer).setPositiveButton("关闭", null).show()
+                    if (!automatic || (document == id && pageIndex == index && ink.page.revision == data.revision)) {
+                        val dialog = AlertDialog.Builder(this).setTitle("识别 / 批改结果 · 版本 ${data.revision}")
+                            .setMessage(answer).setPositiveButton("关闭", null)
+                        if (workspace != null) dialog.setNeutralButton("带回工作区继续") { _, _ ->
+                            startActivity(Intent(this, com.opc.baize.agent.AgentWorkspaceActivity::class.java)
+                                .putExtra("workspace", workspace)
+                                .putExtra("feedback", "以下是学习页第 ${index + 1} 页、笔迹版本 ${data.revision} 的识别/批改结果，请结合工作区原内容继续。先根据反馈生成适合手写的下一份学习材料，保存到 /memory/pages/：\n" + answer.take(24000)))
+                        }
+                        dialog.show()
+                    }
                 } }
             } catch (e: Exception) {
                 message("提交未完成：" + com.opc.baize.subscription.SubscriptionErrors.describe(e) + "。笔迹保留，可继续书写。")
-            } finally { bitmap.recycle(); runOnUiThread { submitting = false } }
+            } finally { bitmap.recycle(); runOnUiThread {
+                submitting = false
+                if (!destroyed && autoRecognize && document == id && pageIndex == index && ink.page.revision != data.revision)
+                    handler.postDelayed(recognizeLater, 1800)
+            } }
         }
     }
     private fun message(text: String) = runOnUiThread { if (!destroyed) status.text = text }
     override fun onDestroy() {
         destroyed = true
+        handler.removeCallbacks(recognizeLater)
         // Submitted work may finish saving its captured revision after this screen closes.
         io.execute { renderer?.close(); renderer = null }
         ai.shutdown()
         ink.release(); super.onDestroy()
+    }
+    companion object {
+        private const val RECOGNIZE = "请直接识别图中可见的文字、手写和图形关系，按原布局顺序转写。不要解答题目。看不清的位置标记[不清晰]，不补写内容。"
     }
 }

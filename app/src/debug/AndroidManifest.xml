@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-    <application android:label="墨灵 AI Paper 0.3.2" tools:replace="android:label">
+    <application android:label="WE 0.4.0 Preview" tools:replace="android:label">
         <activity android:name="com.opc.baize.subscription.SubscriptionProbeActivity"
             android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
     </application>

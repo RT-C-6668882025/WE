@@ -1,3 +1,15 @@
+# WE · Write Everything
+
+Android 手写学习工作区，在设备内调用 Skills、MCP 和现有订阅。
+
+[下载 WE v0.4.0 Preview](https://github.com/RT-C-6668882025/WE/releases/tag/v0.4.0-we-preview) · [版本说明](docs/releases/v0.4.0.md) · [实现与边界](docs/android-native-agent.md)
+
+入口：主界面设置 → WE 工作区 · Skill / MCP。创建工作区，导入 Skill，输入学习目标；生成文件后选择留白手写页，即可书写、识别并带回原工作区继续。
+
+以下保留上游项目说明与致谢。
+
+---
+
 <div align="center">
 
 **中文** · [English](README.en.md)

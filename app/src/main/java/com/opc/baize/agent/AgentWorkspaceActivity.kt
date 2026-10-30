@@ -31,7 +31,7 @@ class AgentWorkspaceActivity : Activity() {
         setContentView(ScrollView(this).apply { addView(root) })
         fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; root.addView(this) }
         label("WE 工作区", 26f)
-        label("Skill、MCP 和工具循环在 Android 内执行，模型使用已登录的订阅。当前是原生运行入口，纸面排版与笔迹操作将在此基础上接入。")
+        label("导入 Skill，生成学习内容，打开手写页。书写、识别和下一轮生成保存在同一工作区。")
         choice = Spinner(this); root.addView(choice); controls += choice
         button(root, "新建工作区") {
             val name = EditText(this).apply { hint = "工作区名称" }
@@ -51,7 +51,8 @@ class AgentWorkspaceActivity : Activity() {
                     files.saveMcp(workspace, editor.text.toString()); resetRuntime(); showInfo()
                 } }.show()
         }
-        button(root, "查看工作区文件") { showFiles() }
+        button(root, "查看工作区文件 / 打开手写页") { showFiles() }
+        button(root, "新建空白手写页") { openPaper(null, true) }
         input = EditText(this).apply { hint = "写下目标，或指定要调用的 Skill"; minLines = 3; gravity = android.view.Gravity.TOP; textSize = 18f }
         root.addView(input); controls += input
         button(root, "执行") { val text = input.text.toString().trim(); if (text.isNotEmpty()) run(text) }
@@ -68,7 +69,8 @@ class AgentWorkspaceActivity : Activity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         if (files.list().isEmpty()) files.create("我的工作区")
-        reload(getPreferences(MODE_PRIVATE).getString("workspace", ""))
+        reload(intent.getStringExtra("workspace") ?: getPreferences(MODE_PRIVATE).getString("workspace", ""))
+        intent.getStringExtra("feedback")?.let { input.setText(it) }
     }
     private fun button(root: LinearLayout, title: String, call: () -> Unit) {
         val button = Button(this).apply { text = title; setOnClickListener { safe(call) } }
@@ -141,15 +143,36 @@ class AgentWorkspaceActivity : Activity() {
     private fun showFiles() {
         val root = current().root
         val entries = root.walkTopDown().maxDepth(10).onEnter { !it.name.startsWith('.') }
-            .filter { it.isFile && it.extension.lowercase() in setOf("md", "txt", "json", "html") }.take(200).toList()
+            .filter { it.isFile && it.extension.lowercase() in setOf("md", "txt", "json", "html", "pdf") }.take(200).toList()
         AlertDialog.Builder(this).setTitle("工作区文件").setItems(entries.map { it.relativeTo(root).path }.toTypedArray()) { _, index ->
             val file = entries[index]
+            if (file.extension.lowercase() == "pdf") { openPaper(file, true); return@setItems }
             val content = TextView(this).apply {
                 text = file.reader().use { reader -> val buffer = CharArray(256000); val count = reader.read(buffer); String(buffer, 0, count.coerceAtLeast(0)) }
                 textSize = 18f; setPadding(24, 16, 24, 16); setTextIsSelectable(true)
             }
-            AlertDialog.Builder(this).setTitle(file.name).setView(ScrollView(this).apply { addView(content) }).setPositiveButton("关闭", null).show()
+            AlertDialog.Builder(this).setTitle(file.name).setView(ScrollView(this).apply { addView(content) })
+                .setPositiveButton("留白手写页") { _, _ -> openPaper(file, true) }
+                .setNeutralButton("紧凑手写页") { _, _ -> openPaper(file, false) }
+                .setNegativeButton("关闭", null).show()
         }.setNegativeButton("关闭", null).show()
+    }
+    private fun openPaper(source: java.io.File?, spacious: Boolean) {
+        val workspace = current()
+        controls.forEach { it.isEnabled = false }
+        scope.launch {
+            try {
+                val pdf = withContext(Dispatchers.IO) {
+                    if (source?.extension?.lowercase() == "pdf") source else
+                        java.io.File(workspace.root, "memory/pages/paper-${UUID.randomUUID()}.pdf").also {
+                            LearningPageRenderer.render(source, it, spacious)
+                        }
+                }
+                startActivity(Intent(this@AgentWorkspaceActivity, com.opc.baize.paper.PaperActivity::class.java)
+                    .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.absolutePath))
+            } catch (e: Exception) { output.append("\n打开学习页失败：${e.message}") }
+            finally { controls.forEach { it.isEnabled = true } }
+        }
     }
     @Deprecated("Platform callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
