@@ -53,8 +53,8 @@ object NativeRuntimeContract {
                 0 -> "read_file" to """{"path":"/.agents/skills/fixture/SKILL.md"}"""
                 1 -> { assertTrue(serialized.contains("NATIVE_SKILL_MARKER")); "read_file" to """{"path":"/mcp/tools/mcp__fixture__add/schema.json"}""" }
                 2 -> "mcp__fixture__add" to """{"a":7,"b":5}"""
-                3 -> { assertTrue(serialized.contains("12")); "write_file" to """{"path":"/lesson.md","content":"NATIVE_LESSON_12"}""" }
-                4 -> "read_file" to """{"path":"/lesson.md"}"""
+                3 -> { assertTrue(serialized.contains("12")); "write_file" to """{"path":"/memory/pages/lesson.md","content":"NATIVE_LESSON_12"}""" }
+                4 -> "read_file" to """{"path":"/memory/pages/lesson.md"}"""
                 else -> { assertTrue(serialized.contains("NATIVE_LESSON_12")); "finish" to """{"response":"NATIVE_ANDROID_OK_12"}""" }
             }
             sseCall(round, action.first, action.second)
@@ -67,7 +67,7 @@ object NativeRuntimeContract {
             val events = runtime.run(AgentRequest("native-$id", "session-$id", "Use the fixture skill, add 7 and 5, then save and read the lesson.")).toList()
             assertTrue(events.toString(), events.none { it is AgentEvent.Failed || it is AgentEvent.ConfirmationRequired })
             assertEquals(1, mcpCalls.get())
-            assertEquals("NATIVE_LESSON_12", File(workspace.root, "lesson.md").readText())
+            assertEquals("NATIVE_LESSON_12", File(workspace.root, "memory/pages/lesson.md").readText())
             assertTrue(events.toString(), events.filterIsInstance<AgentEvent.ResultAvailable>().any { it.result.response.contains("NATIVE_ANDROID_OK_12") })
             assertTrue(File(workspace.root, "runtime-session-store.sqlite").isFile)
             assertTrue(round >= 6)

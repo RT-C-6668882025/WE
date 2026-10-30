@@ -10,7 +10,7 @@ import java.io.File
 import java.util.UUID
 
 data class WeWorkspace(val id: String, val name: String, val container: File) {
-    val root get() = File(container, "workspace").apply { mkdirs() }
+    val root get() = File(container, "workspace").apply { mkdirs(); File(this, "memory/pages").mkdirs() }
     val transcript get() = File(container, "conversation.txt")
 }
 

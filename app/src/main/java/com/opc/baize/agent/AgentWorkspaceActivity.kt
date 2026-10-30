@@ -56,7 +56,7 @@ class AgentWorkspaceActivity : Activity() {
         root.addView(input); controls += input
         button(root, "执行") { val text = input.text.toString().trim(); if (text.isNotEmpty()) run(text) }
         button(root, "验证本机工具调用（使用订阅额度）") {
-            run("请使用工作区文件工具创建 /we-native-probe.md，内容为 WE_NATIVE_OK；然后用读取工具读取该文件，最后报告读取结果。必须实际调用工具。")
+            run("请使用工作区文件工具创建 /memory/pages/we-native-probe-${System.currentTimeMillis()}.md，内容为 WE_NATIVE_OK；然后用读取工具读取该文件，最后报告读取结果。必须实际调用工具。")
         }
         root.addView(Button(this).apply { text = "停止当前任务"; setOnClickListener { job?.cancel(); output.append("\n已请求停止。") } })
         output = label("", 17f).apply { setTextIsSelectable(true) }
