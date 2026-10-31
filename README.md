@@ -1,174 +1,97 @@
 # WE · Write Everything
 
-Android 手写学习工作区，在设备内调用 Skills、MCP 和现有订阅。
+**打开就能写，回到工作区继续。**
 
-[下载 WE v0.4.0 Preview](https://github.com/RT-C-6668882025/WE/releases/tag/v0.4.0-we-preview) · [版本说明](docs/releases/v0.4.0.md) · [实现与边界](docs/android-native-agent.md)
+WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Moling](https://github.com/xiaoxi668v-prog/moling) 改造。用手写、语音或打字表达需求，在同一个工作区保存对话、资料与学习页面。
 
-入口：主界面设置 → WE 工作区 · Skill / MCP。创建工作区，导入 Skill，输入学习目标；生成文件后选择留白手写页，即可书写、识别并带回原工作区继续。
+[下载安装包](https://github.com/RT-C-6668882025/WE/releases) · [版本记录](docs/releases/) · [反馈问题](https://github.com/RT-C-6668882025/WE/issues) · [English](README.en.md)
 
-以下保留上游项目说明与致谢。
+当前源码版本：**v0.4.3 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
 
----
+## 怎么使用
 
-<div align="center">
+### 首页：直接开始
 
-**中文** · [English](README.en.md)
+- 直接手写，停笔后识别并回答；也可以点击“打字”或“语音”。
+- 语音使用设备的系统识别服务；未安装相应服务时，可使用键盘语音输入。
+- 点击左下角图标，打开“工作区 / 设置 / 关于”面板。
 
-# 墨灵（Moling）
+### 工作区：查看历史，继续任务
 
-**一枚栖于墨水屏中的「墨中之灵」——手写提问，停笔片刻，答自现于纸上。**
+- 旧会话和已有学习工作区统一列出，原会话存档保留。
+- 点击一个工作区，在首页继续原任务，恢复最近对话上下文。
+- “＋ 新工作区”开始新任务。
+- 每个工作区的“资料”中可查看文件、导入 PDF、打开最近学习页、重命名或删除工作区。
+- PDF、学习页面等操作放在对应工作区内，设置中不再提供独立工作台入口。
 
-<img src="docs/01-device.jpg" alt="墨灵在墨水屏平板上的实拍" width="620">
+### 设置：配置能力
 
-无输入框、无按钮，只有笔与纸。你在墨水屏上手写一个问题，墨灵识别你的字迹，
-再以浅近文言（半文半白、如古书批注）逐字将回答「写」在纸面上。
+- 登录 ChatGPT 订阅，读取账号可用模型，分别选择文字与图片模型；或使用兼容 Anthropic Messages API 的服务。
+- 调整字体、字号、停笔识别延迟和书写相关选项。
+- 配置本机识别、订阅视觉识别及可选的识别降级服务。
 
-</div>
+“关于”展示 WE 项目信息、许可及上游和第三方致谢。
 
----
+## 手写与学习页面
 
-## ⬇️ 直接下载安装
+- 首页支持本机 ML Kit Digital Ink 识别，也可使用选定的订阅视觉模型。
+- PDF 学习页支持书写、撤销、移动、缩放、矩形选区、整页或选区识别、批改与解释。
+- 笔迹独立于原 PDF 保存；识别记录关联提交时的页码、笔迹版本和选区。
+- 学习页可启用“停笔后自动继续”：识别反馈交给设备内的 Agent，结合原材料生成修改版或下一份文本学习页。
+- 等待期间继续书写时，生成结果先保留，通过“查看生成页”打开，避免抢切当前页面。
 
-> 面向小白：不用敲命令、不用自己编译，下载装上就能用。
+编排、文件和笔迹保存在 Android 端；模型推理由所选服务提供方处理，需要联网。WE 不要求电脑、Termux 或单独部署 Agent 引擎。
 
-**👉 [点此下载 墨灵 APK（v1.0.1）](https://github.com/xiaoxi668v-prog/moling/releases/download/v1.0.1/moling-1.0.1.apk)**
+## Skill 与 MCP 的实际状态
 
-或前往 **[发布页 Releases](https://github.com/xiaoxi668v-prog/moling/releases/latest)** 下载最新版本。
+当前内置 Android Agent Runtime 已具备文件工具、Skill 读取和公开 HTTPS MCP 客户端能力，相关实现见 [Android 原生 Agent](docs/android-native-agent.md)。这些是内部运行能力，不等于对外控制接口。
 
-**安装步骤：**
+**WordTok 式对外 MCP 服务、固定连接地址和配对尚未接入。** 目前不能把 WE 当成已开放的 MCP 服务，让外部 Agent 直接连接控制。
 
-1. 在手机 / 墨水屏平板上打开上面的链接，下载 `moling-1.0.1.apk`；
-2. 点开安装（若提示「未知来源」，按系统指引允许本次安装即可）；
-3. 首次打开会引导你填一次大模型 API（见下方《配置大模型》），填好即可开始手写问答。
+当前生成页面以文本学习纸为主。可编辑图形框架、任意 Python/Node Skill 脚本、MCP OAuth 和 stdio 传输尚未支持。DSH Go、RikkaHub、Excalidraw 和 Jetpack Ink 为已研究的候选，未集成。具体见 [实现、验证与边界](docs/research/continuous-learning.md)。Google Drive 同步暂未接入。
 
-> 装到**华为等墨水屏平板**体验最佳；普通安卓手机 / 平板也能装能用，只是没有墨水屏那种「纸感」。
+## 安装与登录
 
----
+要求 **Android 8.0 / API 26 及以上**。普通 Android 手机和平板可用；支持相应系统框架的华为墨水屏设备另有直写适配。
 
-## ✍️ 它长什么样
+1. 从本仓库 [Releases](https://github.com/RT-C-6668882025/WE/releases) 下载 WE APK 并安装。
+2. 打开“设置”，选择 ChatGPT 订阅或原 API 通道。
+3. 使用订阅时，完成浏览器授权，刷新账号模型列表，选择模型并点击“保存选择并启用订阅”。
+4. 返回首页开始输入，或从工作区打开已有任务。
 
-**开屏即纸**——打开就是一页素纸和墨灵的自我介绍，没有任何多余的界面。
+订阅凭据通过 Android Keystore 加密保存在本机。明确退出登录会删除会话。
 
-<img src="docs/02-welcome.jpg" alt="开屏欢迎页" width="360">
+若浏览器授权最后停在 `127.0.0.1` 错误页，可在同次授权仍进行时，将完整地址粘贴到 App 的“浏览器回调失败：恢复本次授权”中。App 仍校验本次地址与授权状态。**该地址含一次性授权信息，不要发到 Issues、聊天或公开渠道。**
 
-**手写即问，停笔即答**——你写下「如何早卧」，墨灵停笔片刻便以文言逐字答在纸上。
+预览包使用 debug 签名。覆盖安装需要相同签名；签名不一致时先保留原安装与资料，避免卸载造成数据丢失。不同来源的预览包不保证能相互覆盖。
 
-<img src="docs/03-qa.jpg" alt="手写问答示例" width="360">
+## 构建与验证
 
-**单击左下角印章**，从纸面唤出半屏面板，翻看**历史**每一次问答，可单条删除、也可另起新篇。
-
-<img src="docs/04-history.jpg" alt="历史面板" width="360">
-
-**设置**里可调回复字号、切换三款手写体、调节停笔识别的快慢。
-
-<img src="docs/05-settings-font.jpg" alt="设置——字体与书写" width="360">
-
-再往下，填入你自己的**大模型 API**（密钥 / 节点 / 模型名）即可，可选自建手写识别服务。
-
-<img src="docs/06-settings-api.jpg" alt="设置——大模型 API" width="360">
-
----
-
-## 📖 关于墨灵
-
-- 作者：小西校长
-- 版本：墨灵 1.0.1
-- 协议：GPL-3.0（见 [LICENSE](LICENSE)）
-- 平台：Android（minSdk 26 / targetSdk 34），Kotlin + 传统 View，无 Jetpack Compose
-
-### 墨水屏直写原理（一句话）
-
-在支持的华为墨水屏设备上，墨灵通过反射调用系统既有的手写框架（`HWEditView`）与面板刷新
-接口（`EPDCDevice`），让笔迹「写一点、出一点」、几乎不经应用层绘制，从而把书写延迟压到极限；
-在其它设备上自动回退到纯自绘 + AndroidX 运动预测（Kalman 外推），行为一致、只是延迟略高。
-
-识别走 Google **ML Kit Digital Ink**（本地、离线、直接吃笔画轨迹，不上传图片）；
-回答走用户自配的、兼容 **Anthropic Messages API** 的大模型端点。
-
----
-
-## 🔧 配置大模型 API
-
-首次打开会弹出欢迎并引导进入设置；之后可随时**单击左下角印章**打开半屏面板，切到【设置】：
-
-- **API 密钥**：在 DeepSeek 开放平台（或其它兼容服务）获取，形如 `sk-xxxxxx`。
-- **访问节点**：默认 `https://api.deepseek.com/anthropic`，可改为任何兼容 Anthropic Messages API 的服务。
-- **模型名字**：默认 `deepseek-v4-flash`。
-
-三项填齐并「保存」后即可应答。三者任一为空时，墨灵会在纸上温和提示你先去配置，不会崩溃。
-密钥只保存在设备本地（SharedPreferences），不进任何构建产物、不上传。
-
-设置里还有：
-
-- **字体**：回复字号（24~48）与三款开源手写体切换，即时生效。
-- **书写**：停笔识别延迟档位（300ms~3000ms）——写字慢多停顿就调大，想更快就调小。
-- **手写识别（可选）**：设备没有 Google 服务（如部分华为机型）时本机 ML Kit 识别不可用，
-  可自建识别服务并在此填地址（`http://<局域网IP>:<端口>/api/ask`）；留空则只用本机识别。
-
----
-
-## 👆 操作
-
-- **手写提问**：直接在屏上写，停笔片刻（默认 0.8 秒，可在设置里调 0.3~3 秒）自动识别并作答。
-- **单击左下角印章**：打开半屏面板（【历史】/【设置】/【关于】），先落在【历史】页。
-- **历史**：按会话分条；点任意一条回看；点行尾「删」可单独删除该条（有确认）；「＋ 新对话」另起新篇。
-- **两指左右滑**：翻页 / 回看。
-- **长按左上角**：清空全书（另起新对话，历史仍可回看）。
-- **长按右上角**：直接打开设置。
-- **手写 `/new`**：开启新对话。
-
----
-
-## 🛠 如何自建（开发者）
-
-前置：JDK 17、Android SDK（platform 34、build-tools）。
+技术栈：Kotlin、Java、Android Views；`minSdk 26`、`compileSdk / targetSdk 34`。构建需要 **JDK 17、Android SDK Platform 34 和 Build Tools 34.0.0**。
 
 ```bash
-export JAVA_HOME=/path/to/jdk-17
-export ANDROID_HOME=$HOME/Library/Android/sdk   # 或你的 SDK 路径
-./gradlew assembleDebug        # 产物：app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest    # 跑纯逻辑单测
+./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-构建产物**不含任何密钥**。把 APK 装到墨水屏平板即可（首次启动会引导你配置大模型 API）。
+APK：`app/build/outputs/apk/debug/app-debug.apk`。
 
----
+Android 仪器测试：
 
-## 🖋 字体
+```bash
+./gradlew connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest
+```
 
-内置三款开源手写体供选择（均为 SIL Open Font License 1.1）：
+当前本地验证已通过 99 项单元测试、Lint 和 APK 构建，包含旧任务续接、工作区索引、资料保留及界面入口检查。模拟模型和本机回调测试不替代真实订阅授权、识图准确率、语音服务或平板笔感验证。
 
-- 龙藏 Long Cang
-- 马善政 Ma Shan Zheng
-- 智莽行 Zhi Mang Xing
+## 项目与致谢
 
-字体文件位于 `app/src/main/assets/`，随仓库分发以保证可复现构建。
+WE 由 **RT · [RT-C-6668882025](https://github.com/RT-C-6668882025)** 维护。
 
----
+- [Moling](https://github.com/xiaoxi668v-prog/moling)：原项目及手写底座，作者小西校长。
+- [Android Agent Runtime](https://github.com/NoHarry/android-agent-runtime)：设备内 Agent、Skill 与 MCP 客户端能力，使用 `0.3.0`，MIT；[随附许可](app/src/main/assets/agent-licenses/Android-Agent-Runtime-MIT.txt)。
+- Google ML Kit Digital Ink Recognition：本机笔迹识别。
+- AndroidX：文档访问与运动预测等组件。
+- Long Cang、Ma Shan Zheng、Zhi Mang Xing：手写字体，SIL Open Font License 1.1。
 
-## 🙏 致谢与第三方声明
-
-- 手写字体：龙藏 / 马善政 / 智莽行（Google Fonts，SIL OFL 1.1）
-- 手写识别：Google ML Kit Digital Ink Recognition
-- 界面框架：AndroidX（含 `androidx.input` 运动预测）
-- 华为墨水屏手写框架：通过反射与系统既有能力互操作（`HWEditView` / `EPDCDevice`），
-  不含华为私有代码；非华为设备自动回退纯自绘 + 运动预测。
-
----
-
-## 📜 许可
-
-本项目以 **GPL-3.0** 发布。你可以自由使用、研究、修改与再分发；衍生作品须同样以 GPL-3.0 开源。
-完整条款见 [LICENSE](LICENSE)。
-
----
-
-## 💬 交流群
-
-用得上、有想法、想反馈问题，欢迎扫码进「墨灵 APP 交流」群一起玩：
-
-<img src="docs/07-wechat-group.jpg" alt="墨灵 APP 交流群二维码" width="260">
-
-> 群二维码会定期更新，若已过期可到 [Issues](https://github.com/xiaoxi668v-prog/moling/issues) 留言。
-
-仓库：https://github.com/xiaoxi668v-prog/moling
+项目沿用 **GPL-3.0**，完整条款见 [LICENSE](LICENSE)。第三方组件与字体遵循各自许可。

@@ -1,177 +1,76 @@
-<div align="center">
+# WE · Write Everything
 
-[中文](README.md) · **English**
+**Start writing. Return to your workspace and continue.**
 
-# Moling （墨灵）
+WE is an Android handwriting and AI workspace application, built on [Moling](https://github.com/xiaoxi668v-prog/moling). Use handwriting, system voice input or typing, and keep conversations, documents and learning pages within a task.
 
-**An "ink spirit" living inside your e-ink screen — write a question by hand, pause your pen, and the answer appears on the paper.**
+[Downloads](https://github.com/RT-C-6668882025/WE/releases) · [Release notes](docs/releases/) · [Issues](https://github.com/RT-C-6668882025/WE/issues) · [中文](README.md)
 
-<img src="docs/01-device.jpg" alt="Moling running on an e-ink tablet" width="620">
+Current source version: **v0.4.3 Preview**. See Releases for APKs actually available on GitHub.
 
-No text field, no buttons — just a pen and paper. You handwrite a question on the e-ink
-screen; Moling recognizes your strokes and then "writes" the reply back onto the page,
-character by character, in plain classical Chinese (like margin notes in an old book).
+## The interface
 
-</div>
+- **Home:** write immediately, or use the typing and voice buttons. Voice requires an installed system recognition service.
+- **Workspaces:** browse and resume previous tasks. Existing conversation archives are retained. Selecting a task restores its identity and recent conversation context.
+- **Workspace documents:** view files, import PDFs, open the latest learning paper, rename or delete the workspace.
+- **Settings:** configure models, subscription login, recognition, handwriting and appearance. Separate PDF and Skill/MCP workbench entries have been removed.
+- **About:** WE project information, licensing and upstream credits.
 
----
+Tap the bottom-left icon to open the Workspaces / Settings / About panel.
 
-## ⬇️ Download & Install
+## Handwriting and learning papers
 
-> For non-technical users: no commands, no compiling — just download and go.
+Home supports ML Kit Digital Ink recognition and the selected subscription vision model. PDF papers support handwriting, undo, pan, zoom, rectangular selection, recognition, grading and explanations. Ink is stored separately from the original PDF; submissions record the source page, revision and region.
 
-**👉 [Download Moling APK (v1.0.1)](https://github.com/xiaoxi668v-prog/moling/releases/download/v1.0.1/moling-1.0.1.apk)**
+A learning paper can automatically continue after a writing pause: recognized feedback is passed to the on-device agent, which reads the source material and saves a revised or subsequent text learning paper. If you keep writing while it works, the generated result remains available without switching away from your current page.
 
-Or grab the newest build from the **[Releases page](https://github.com/xiaoxi668v-prog/moling/releases/latest)**.
+Orchestration, files and ink live on Android. Model inference uses your selected provider over the network. A computer, Termux or separately deployed agent engine is not required.
 
-**Steps:**
+## Skill and MCP status
 
-1. Open the link above on your phone / e-ink tablet and download `moling-1.0.1.apk`；
-2. Tap to install (if you see an "unknown sources" prompt, allow this install when asked)；
-3. On first launch you'll be guided to enter a large-model API once (see *Configure the LLM* below), and you're ready to write.
+The embedded Android Agent Runtime provides file tools, Skill reading and a public HTTPS MCP client. This is **not an external MCP server**.
 
-> Best experience on **Huawei-style e-ink tablets**; it also installs and runs on ordinary
-> Android phones / tablets — you just won't get that e-ink "paper" feel.
+WordTok-style external MCP control, a fixed connection URL and pairing are **not implemented**. Current generated papers are primarily text. Editable graphical scenes, arbitrary Python/Node Skill scripts, MCP OAuth, stdio and Google Drive sync are not supported. DSH Go, RikkaHub, Excalidraw and Jetpack Ink were investigated but have not been integrated.
 
----
+See [native agent implementation](docs/android-native-agent.md) and [verification boundaries](docs/research/continuous-learning.md).
 
-## ✍️ What it looks like
+## Install and configure
 
-**Paper on open** — launch straight into a blank sheet and Moling's self-introduction, with no extra UI.
+Requires **Android 8.0 / API 26 or newer**. Ordinary Android phones and tablets are supported, with additional direct-ink integration on compatible Huawei e-ink hardware.
 
-<img src="docs/02-welcome.jpg" alt="Welcome page" width="360">
+1. Download a WE APK from this repository's [Releases](https://github.com/RT-C-6668882025/WE/releases).
+2. Open Settings and choose ChatGPT subscription or an Anthropic Messages-compatible API provider.
+3. For subscription access, finish browser authorization, refresh the account model catalog, select text and image models, and save the selection.
+4. Return to Home or resume a workspace.
 
-**Write to ask, pause to answer** — write "how to sleep early" and, after a short pause,
-Moling writes back a reply in classical Chinese, stroke by stroke.
+Subscription credentials are encrypted locally using Android Keystore. Signing out removes the local session. If the final browser redirect to `127.0.0.1` fails while authorization is still active, paste the complete failed-page URL into the app's callback recovery dialog. The callback address and authorization state are still validated. **The URL contains one-time authorization data: do not post it in Issues, chats or public pages.**
 
-<img src="docs/03-qa.jpg" alt="Handwritten Q&A example" width="360">
+Preview APKs use debug signing. In-place updates require the same signing certificate. Preserve the existing installation and data if Android reports a signature mismatch; uninstalling deletes app data. Previews from different build environments may use different certificates.
 
-**Tap the seal at the bottom-left** to summon a half-screen panel from the page: browse
-your **history** of every exchange, delete single entries, or start a fresh conversation.
+## Build
 
-<img src="docs/04-history.jpg" alt="History panel" width="360">
-
-**Settings** let you adjust reply font size, switch between three handwriting fonts, and tune
-how quickly recognition fires after you lift your pen.
-
-<img src="docs/05-settings-font.jpg" alt="Settings — font & writing" width="360">
-
-Further down, enter your own **large-model API** (key / endpoint / model name);
-an optional self-hosted handwriting-recognition service is also supported.
-
-<img src="docs/06-settings-api.jpg" alt="Settings — LLM API" width="360">
-
----
-
-## 📖 About Moling
-
-- Author: Principal Xiaoxi (小西校长)
-- Version: Moling 1.0.1
-- License: GPL-3.0 (see [LICENSE](LICENSE))
-- Platform: Android (minSdk 26 / targetSdk 34), Kotlin + classic Views, no Jetpack Compose
-
-### How direct e-ink writing works (in one line)
-
-On supported Huawei e-ink devices, Moling uses reflection to call the system's existing
-handwriting framework (`HWEditView`) and panel-refresh interface (`EPDCDevice`), so ink
-appears "a stroke at a time" almost without app-layer drawing — pushing writing latency to
-the limit. On other devices it automatically falls back to pure self-drawing + AndroidX
-motion prediction (Kalman extrapolation): same behavior, just slightly higher latency.
-
-Recognition runs on Google **ML Kit Digital Ink** (local, offline, consuming stroke
-trajectories directly — no image upload). Answers go to a user-configured endpoint
-compatible with the **Anthropic Messages API**.
-
----
-
-## 🔧 Configure the LLM API
-
-The first launch shows a welcome and guides you into Settings; afterwards you can
-**tap the bottom-left seal** anytime to open the half-screen panel and switch to **Settings**:
-
-- **API key**: obtain from the DeepSeek open platform (or any compatible service), in the form `sk-xxxxxx`.
-- **Endpoint**: defaults to `https://api.deepseek.com/anthropic`; change it to any service compatible with the Anthropic Messages API.
-- **Model name**: defaults to `deepseek-v4-flash`.
-
-Once all three are filled in and saved, Moling can reply. If any of the three is empty,
-Moling gently prompts you on the page to configure it first — it never crashes.
-The key is stored only on-device (SharedPreferences); it never enters any build artifact and is never uploaded.
-
-Settings also include:
-
-- **Font**: reply font size (24–48) and switching between three open-source handwriting fonts, applied instantly.
-- **Writing**: pen-lift recognition delay (300ms–3000ms) — increase it if you write slowly with pauses, decrease it if you want it snappier.
-- **Handwriting recognition (optional)**: on devices without Google services (e.g. some Huawei
-  models) on-device ML Kit recognition isn't available; you can self-host a recognition
-  service and enter its address here (`http://<LAN-IP>:<port>/api/ask`). Leave it blank to use on-device recognition only.
-
----
-
-## 👆 Controls
-
-- **Handwrite a question**: just write on the screen; after a short pause (default 0.8s, adjustable 0.3–3s in Settings) it auto-recognizes and answers.
-- **Tap the bottom-left seal**: open the half-screen panel (**History** / **Settings** / **About**), landing on **History** first.
-- **History**: grouped by conversation; tap any entry to review it; tap "删" (Delete) at the end of a row to remove that single entry (with confirmation); "＋ 新对话" (New Chat) starts a fresh one.
-- **Two-finger swipe left/right**: page through / review.
-- **Long-press top-left**: clear the whole book (start a new conversation; history is still reviewable).
-- **Long-press top-right**: open Settings directly.
-- **Handwrite `/new`**: start a new conversation.
-
----
-
-## 🛠 Build it yourself (developers)
-
-Prerequisites: JDK 17, Android SDK (platform 34, build-tools).
+Kotlin, Java and Android Views; `minSdk 26`, `compileSdk / targetSdk 34`. Requires **JDK 17, Android SDK Platform 34 and Build Tools 34.0.0**.
 
 ```bash
-export JAVA_HOME=/path/to/jdk-17
-export ANDROID_HOME=$HOME/Library/Android/sdk   # or your SDK path
-./gradlew assembleDebug        # output: app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest    # run pure-logic unit tests
+./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-Build artifacts contain **no keys whatsoever**. Just install the APK onto an e-ink tablet
-(the first launch guides you through configuring the LLM API).
+Output: `app/build/outputs/apk/debug/app-debug.apk`.
 
----
+```bash
+./gradlew connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest
+```
 
-## 🖋 Fonts
+Local validation passed 99 unit tests, lint and APK assembly, including task continuation, workspace indexing, data retention and UI entry checks. Synthetic model and callback tests do not establish real-account authorization, vision accuracy, system voice availability or physical stylus performance.
 
-Three open-source handwriting fonts are bundled (all under SIL Open Font License 1.1):
+## Credits and license
 
-- Long Cang （龙藏）
-- Ma Shan Zheng （马善政）
-- Zhi Mang Xing （智莽行）
+Maintained by **RT · [RT-C-6668882025](https://github.com/RT-C-6668882025)**.
 
-Font files live in `app/src/main/assets/` and ship with the repository to guarantee reproducible builds.
+- [Moling](https://github.com/xiaoxi668v-prog/moling), by 小西校长: upstream application and handwriting foundation.
+- [Android Agent Runtime](https://github.com/NoHarry/android-agent-runtime) `0.3.0`: on-device agent, Skills and MCP client, MIT; [bundled license](app/src/main/assets/agent-licenses/Android-Agent-Runtime-MIT.txt).
+- Google ML Kit Digital Ink Recognition and AndroidX components.
+- Long Cang, Ma Shan Zheng and Zhi Mang Xing fonts, SIL Open Font License 1.1.
 
----
-
-## 🙏 Credits & third-party notices
-
-- Handwriting fonts: Long Cang / Ma Shan Zheng / Zhi Mang Xing (Google Fonts, SIL OFL 1.1)
-- Handwriting recognition: Google ML Kit Digital Ink Recognition
-- UI framework: AndroidX (incl. `androidx.input` motion prediction)
-- Huawei e-ink handwriting framework: interoperated via reflection with the system's existing
-  capabilities (`HWEditView` / `EPDCDevice`); contains no Huawei proprietary code. Non-Huawei
-  devices automatically fall back to pure self-drawing + motion prediction.
-
----
-
-## 📜 License
-
-Released under **GPL-3.0**. You may freely use, study, modify, and redistribute it;
-derivative works must also be open-sourced under GPL-3.0. See [LICENSE](LICENSE) for the full terms.
-
----
-
-## 💬 Community
-
-Find it useful, have ideas, or want to report a bug? You're welcome to scan the QR code below
-to join the "Moling APP" chat group:
-
-<img src="docs/07-wechat-group.jpg" alt="Moling APP chat group QR code" width="260">
-
-> The group QR code is refreshed periodically. If it has expired, leave a note on [Issues](https://github.com/xiaoxi668v-prog/moling/issues).
-
-Repository: https://github.com/xiaoxi668v-prog/moling
+WE retains **GPL-3.0**; see [LICENSE](LICENSE). Third-party code and fonts retain their respective licenses.
