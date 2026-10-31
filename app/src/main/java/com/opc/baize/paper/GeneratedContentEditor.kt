@@ -41,12 +41,12 @@ object GeneratedContentEditor {
                 field("内容 / 说明",b.optString("text")) { b.put("text",it) }
                 if (b.getString("type") == "question") field("答题留白行数（1～10）",b.optInt("answer_lines",3).toString(),true) { b.put("answer_lines",it.toInt()) }
                 if (b.getString("type") in setOf("writing","drawing","figure")) {
-                    field("区域高度（64～500）",b.optInt("height",240).toString(),true) { b.put("height",it.toInt()) }
+                    field("区域高度（64～500）",b.optInt("height",if (b.getString("type") == "writing") 144 else 240).toString(),true) { b.put("height",it.toInt()) }
                     val grids = arrayOf("blank","ruled","square","dots")
                     label("底纹：空白 / 横线 / 方格 / 点阵")
                     val grid = Spinner(activity).apply {
                         adapter = ArrayAdapter(activity,android.R.layout.simple_spinner_dropdown_item,arrayOf("空白","横线","方格","点阵"))
-                        setSelection(grids.indexOf(b.optString("grid","blank")).coerceAtLeast(0))
+                        setSelection(grids.indexOf(b.optString("grid",if (b.getString("type") == "writing") "ruled" else "blank")).coerceAtLeast(0))
                     }; root.addView(grid); edits += { b.put("grid",grids[grid.selectedItemPosition]) }
                 }
                 val shapes = b.optJSONArray("shapes") ?: JSONArray()

@@ -295,6 +295,7 @@ class PaperActivity : Activity() {
                     sourceFile?.let { "/" + it.relativeTo(owner.root).path }).apply()
                 runOnUiThread { if (!destroyed) {
                     if (drawing) {
+                        ink.brushEngine = DrawpileBrush.ENGINE
                         autoContinueSwitch.isChecked = false; autoRecognize = false; autoStudy = false
                         handler.removeCallbacks(recognizeLater); toolsVisible = true
                         extraTools.forEach { it.visibility = android.view.View.VISIBLE }
