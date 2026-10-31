@@ -247,7 +247,7 @@ class PaperActivity : Activity() {
             } } }
         }
     }
-    private fun submit(prompt: String, automatic: Boolean = false, continueLearning: Boolean = false) {
+    private fun submit(prompt: String, automatic: Boolean = false) {
         handler.removeCallbacks(recognizeLater)
         if (loading || document == null || submitting || studyJob?.isActive == true) return
         if (prefs.getString("model_provider", "anthropic") != "subscription") {
@@ -276,7 +276,7 @@ class PaperActivity : Activity() {
                 runOnUiThread { if (!destroyed) {
                     val unchanged = document == id && pageIndex == index && ink.page.revision == data.revision && interactionVersion == interaction
                     if (stopped || generation != visionGeneration) return@runOnUiThread
-                    if (continueLearning && workspace != null && unchanged) {
+                    if (workspace != null && unchanged) {
                         study(prompt + "\n\n纸面理解结果：\n" + answer.take(24000),
                             "文档 $id，第 ${index + 1} 页，笔迹版本 ${data.revision}，区域 $regionJson")
                     } else if (automatic) {
@@ -338,7 +338,7 @@ class PaperActivity : Activity() {
         val prompt = requestField.text.toString().trim().ifBlank { PaperPrompts.read(this,command) }
         if (scope == 2) {
             if (!automatic && prompt.isNotBlank()) study(prompt,"用户输入")
-        } else submit(prompt,automatic,command != 0 || (requestField.text.isNotBlank() && prompt != PaperPrompts.read(this,0)))
+        } else submit(prompt,automatic)
     }
     private fun showInstructions() {
         AlertDialog.Builder(this).setTitle("指令 · 当前：${PaperPrompts.labels[command]}")
