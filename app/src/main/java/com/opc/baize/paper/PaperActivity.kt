@@ -83,6 +83,8 @@ class PaperActivity : Activity() {
             ink.mode = mode
             modeButtons.forEach { (key, value) ->
                 value.isSelected = key == mode
+                value.backgroundTintList = android.content.res.ColorStateList.valueOf(if (key == mode) Color.rgb(205, 225, 255) else Color.rgb(238, 238, 238))
+                value.setTextColor(if (key == mode) Color.rgb(15, 65, 135) else Color.DKGRAY)
                 value.text = (if (key == mode) "✓ " else "") + when(key) {
                     PaperInkView.Mode.WRITE -> "画笔"
                     PaperInkView.Mode.MOVE -> "移动"
@@ -92,17 +94,18 @@ class PaperActivity : Activity() {
             }
         }
         modeButtons[PaperInkView.Mode.WRITE] = button(tools, "画笔") { selectTool(PaperInkView.Mode.WRITE); status.text = "画笔：在纸上写画；颜色、粗细在下方设置。" }
-        modeButtons[PaperInkView.Mode.MOVE] = button(tools, "移动") { selectTool(PaperInkView.Mode.MOVE); status.text = "移动：拖动纸张；放大、缩小调整视图。" }
+        modeButtons[PaperInkView.Mode.MOVE] = button(tools, "移动") { selectTool(PaperInkView.Mode.MOVE); status.text = "移动：单指拖动纸张；任何工具下都能双指拖动、捏合缩放。" }
         modeButtons[PaperInkView.Mode.SELECT] = button(tools, "框选") { selectTool(PaperInkView.Mode.SELECT); status.text = "框选：拖出矩形，然后点识别、批改或解释；不会自动发送。" }
-        modeButtons[PaperInkView.Mode.ERASE] = button(tools, "橡皮") { selectTool(PaperInkView.Mode.ERASE); status.text = "橡皮：碰到的整条笔迹会被擦除；可撤销，底图保留。" }
+        modeButtons[PaperInkView.Mode.ERASE] = button(tools, "橡皮") { selectTool(PaperInkView.Mode.ERASE); status.text = "橡皮已启用：蓝色圆圈是擦除范围，碰到整条笔迹即擦除；可撤销。" }
         selectTool(PaperInkView.Mode.WRITE)
         val navigation = row().apply { visibility = android.view.View.GONE }; extraTools += navigation
         button(navigation, "撤销") { if (!loading) ink.undo() }
         button(navigation, "缩小") { ink.zoom(0.8f) }
         button(navigation, "放大") { ink.zoom(1.25f) }
+        button(navigation, "复位") { ink.resetView(); status.text = "已恢复整页视图。" }
         button(navigation, "按钮说明") {
             AlertDialog.Builder(this).setTitle("绘画与学习 · 按钮说明")
-                .setMessage("画笔：在生成内容或 PDF 上自由写画。绘画入口使用 Drawpile 经典笔刷核心，压力改变粗细。\n移动：拖动纸张，不留下笔迹。\n框选：拖出矩形，限定随后识别、批改、解释的范围；不框选则处理整页。\n橡皮：擦掉碰到的整条笔迹；不会擦掉生成的底图。\n撤销：恢复上一次画笔或橡皮操作，最多 30 步。\n缩小 / 放大：只改变看纸的大小，不改变笔迹。\n笔迹颜色 / 笔触粗细：设置接下来画出的线；不改变已有笔迹。\n完成需求：发送输入框中的需求，让 AI 生成或修改页面。\n查看生成页：打开最新生成的学习页。\n识别选区 / 整页：识别纸上的文字、图和笔迹。\n局部批改 / 选区解释：让 AI 检查答案或解释内容。\n批改记录：查看本页之前的 AI 回复。\n停笔后自动继续：停笔约 1.8 秒后使用订阅理解反馈、继续学习；绘画默认关闭。\n仅笔书写：阻止手指画线；用移动工具拖纸。\n停止：取消本机当前 AI 任务并关闭自动继续。\n导入 PDF / 上一页 / 下一页：切换文档或页面。笔迹自动保存，返回可退出。")
+                .setMessage("画笔：在生成内容或 PDF 上自由写画。绘画入口使用 Drawpile 经典笔刷核心，压力改变粗细。\n手势：双指捏合缩放、双指拖动纸张，任何工具下都能用；松开后再落笔继续写画。\n移动：单指拖动纸张，不留下笔迹。\n框选：拖出矩形，限定随后识别、批改、解释的范围；不框选则处理整页。\n橡皮：按钮高亮、蓝色圆圈显示擦除范围；擦掉碰到的整条笔迹，底图保留。\n撤销：恢复上一次画笔或橡皮操作，最多 30 步；一趟连续擦除只需撤销一次。\n缩小 / 放大：只改变看纸的大小，不改变笔迹。\n复位：恢复整页大小和居中位置。\n笔迹颜色 / 笔触粗细：设置接下来画出的线；不改变已有笔迹。\n完成需求：发送输入框中的需求，让 AI 生成或修改页面。\n查看生成页：打开最新生成的学习页。\n识别选区 / 整页：识别纸上的文字、图和笔迹。\n局部批改 / 选区解释：让 AI 检查答案或解释内容。\n批改记录：查看本页之前的 AI 回复。\n停笔后自动继续：停笔约 1.8 秒后使用订阅理解反馈、继续学习；绘画默认关闭。\n仅笔书写：阻止手指写画、擦除和框选；仍能双指移动缩放，或用移动工具单指拖纸。\n停止：取消本机当前 AI 任务并关闭自动继续。\n导入 PDF / 上一页 / 下一页：切换文档或页面。笔迹自动保存，返回可退出。")
                 .setPositiveButton("明白了", null).show()
         }
         val pens = row().apply { visibility = android.view.View.GONE }; extraTools += pens
@@ -114,6 +117,7 @@ class PaperActivity : Activity() {
             AlertDialog.Builder(this).setTitle("笔触粗细").setItems(arrayOf("细", "标准", "粗", "画笔")) { _, index -> ink.penWidth = floatArrayOf(1.2f, 1.8f, 3f, 5f)[index]; selectTool(PaperInkView.Mode.WRITE) }.show()
         }
         root.addView(ink, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        ink.toolFeedback = { status.text = it }
         ink.changed = { data ->
             handler.removeCallbacks(recognizeLater)
             if (autoRecognize) handler.postDelayed(recognizeLater, 1800)

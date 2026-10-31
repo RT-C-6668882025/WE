@@ -7,6 +7,73 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NativeAgentDeviceTest {
+    private fun touch(view: com.opc.baize.paper.PaperInkView, action: Int, vararg xy: Pair<Float,Float>) {
+        val properties = Array(xy.size) { index -> android.view.MotionEvent.PointerProperties().apply {
+            id = index; toolType = android.view.MotionEvent.TOOL_TYPE_FINGER
+        } }
+        val coordinates = Array(xy.size) { index -> android.view.MotionEvent.PointerCoords().apply {
+            x = xy[index].first; y = xy[index].second; pressure = 1f; size = 1f
+        } }
+        val event = android.view.MotionEvent.obtain(1, android.os.SystemClock.uptimeMillis(), action,
+            xy.size, properties, coordinates, 0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+        try { org.junit.Assert.assertTrue(view.onTouchEvent(event)) } finally { event.recycle() }
+    }
+    @Test fun pinchPanPreservesFocusAndNeverCommitsGestureInk() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val view = com.opc.baize.paper.PaperInkView(instrumentation.targetContext)
+            view.layout(0,0,400,400)
+            view.load(android.graphics.Bitmap.createBitmap(200,200,android.graphics.Bitmap.Config.ARGB_8888),
+                com.opc.baize.paper.PaperPage(200,200,0,emptyList()))
+            try {
+                for (penOnly in listOf(false,true)) {
+                    view.resetView(); view.stylusOnly = penOnly
+                    touch(view,0,100f to 100f)
+                    touch(view,5 or (1 shl 8),100f to 100f,200f to 100f)
+                    touch(view,2,75f to 75f,225f to 75f)
+                    touch(view,6 or (1 shl 8),75f to 75f,225f to 75f)
+                    touch(view,2,150f to 120f)
+                    touch(view,1,150f to 120f)
+                    org.junit.Assert.assertTrue(view.page.strokes.isEmpty())
+                    org.junit.Assert.assertEquals(0L,view.page.revision)
+                }
+                view.stylusOnly = false
+                touch(view,0,150f to 75f); touch(view,1,150f to 75f)
+                val point = view.page.strokes.single().points.first()
+                org.junit.Assert.assertEquals(75f,point.x,0.01f)
+                org.junit.Assert.assertEquals(50f,point.y,0.01f)
+            } finally { view.release() }
+        }
+    }
+    @Test fun eraserCursorIsVisibleAndGestureCancellationPreservesInk() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val view = com.opc.baize.paper.PaperInkView(instrumentation.targetContext)
+            view.layout(0,0,400,400)
+            val original = listOf(com.opc.baize.paper.PaperStroke(listOf(
+                com.opc.baize.paper.InkPoint(50f,50f,1f,0), com.opc.baize.paper.InkPoint(70f,50f,1f,1))))
+            view.load(android.graphics.Bitmap.createBitmap(200,200,android.graphics.Bitmap.Config.ARGB_8888),
+                com.opc.baize.paper.PaperPage(200,200,0,original))
+            val screen = android.graphics.Bitmap.createBitmap(400,400,android.graphics.Bitmap.Config.ARGB_8888)
+            try {
+                view.mode = com.opc.baize.paper.PaperInkView.Mode.ERASE
+                view.draw(android.graphics.Canvas(screen))
+                org.junit.Assert.assertNotEquals("eraser cursor must be visible immediately",android.graphics.Color.WHITE,screen.getPixel(200,200))
+                val snapshot = view.snapshot().first
+                try { org.junit.Assert.assertEquals("cursor must not enter AI feedback",android.graphics.Color.WHITE,snapshot.getPixel(200,200)) } finally { snapshot.recycle() }
+                touch(view,0,100f to 100f)
+                touch(view,5 or (1 shl 8),100f to 100f,200f to 100f)
+                touch(view,6 or (1 shl 8),100f to 100f,200f to 100f)
+                touch(view,1,100f to 100f)
+                org.junit.Assert.assertEquals(original,view.page.strokes)
+                org.junit.Assert.assertEquals(0L,view.page.revision)
+                touch(view,0,100f to 100f); touch(view,1,100f to 100f)
+                org.junit.Assert.assertTrue(view.page.strokes.isEmpty())
+                org.junit.Assert.assertEquals(1L,view.page.revision)
+                view.undo(); org.junit.Assert.assertEquals(original,view.page.strokes)
+            } finally { screen.recycle(); view.release() }
+        }
+    }
     @Test fun drawpileNativeBrushRendersPressureAndRestoresSavedStrokes() {
         val points = listOf(
             com.opc.baize.paper.InkPoint(30f, 40f, 0.1f, 0),
