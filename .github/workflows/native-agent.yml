@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
   pull_request:
     paths: ["app/**", "mcp/**", ".github/workflows/native-agent.yml"]
+concurrency:
+  group: we-native-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
   actions: write
@@ -14,12 +17,13 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Cancel superseded native builds
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/android-native-agent'
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          GH_BRANCH: ${{ github.ref_name }}
         run: |
-          gh api "repos/$GH_REPO/actions/runs?branch=feat/android-native-agent&per_page=40" \
+          gh api "repos/$GH_REPO/actions/runs?branch=$GH_BRANCH&per_page=40" \
             --jq '.workflow_runs[] | select(.path == ".github/workflows/native-agent.yml" and .head_sha != "${{ github.sha }}" and (.status == "queued" or .status == "in_progress")) | .id' |
           while read -r obsolete_run; do
             gh api --method POST "repos/$GH_REPO/actions/runs/$obsolete_run/cancel" || true
