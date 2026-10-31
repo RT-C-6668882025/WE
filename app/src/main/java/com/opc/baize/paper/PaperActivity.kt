@@ -122,7 +122,7 @@ class PaperActivity : Activity() {
         button(recognition, "识别选区 / 整页") { submit(RECOGNIZE) }
         autoContinueSwitch = Switch(this).apply {
             text = "停笔后自动继续"; isChecked = intent.getBooleanExtra("autoStudy", false); autoRecognize = isChecked; setOnCheckedChangeListener { _, enabled ->
-                autoRecognize = enabled; autoStudy = enabled; interactionVersion++; handler.removeCallbacks(recognizeLater)
+                autoRecognize = enabled; autoStudy = enabled; interactionVersion++; this@PaperActivity.handler.removeCallbacks(recognizeLater)
                 status.text = if (enabled) "停笔后理解反馈并更新学习页，使用订阅额度。" else "已关闭停笔识别。"
             }
         }; recognition.addView(autoContinueSwitch)
