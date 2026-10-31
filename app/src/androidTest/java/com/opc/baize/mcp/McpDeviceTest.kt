@@ -4,7 +4,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Test
 
 class McpDeviceTest {
-    @Test fun openingDrawingContentTurnsOffAutomaticAiEvenWhenThePreviousPageEnabledIt() {
+    @Test fun openingDrawingContentDefaultsToManualRegardlessOfLegacyIntent() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         val w = com.opc.baize.agent.WorkspaceFiles(context).create("drawing-mode-${java.util.UUID.randomUUID()}")
         var activity: android.app.Activity? = null
@@ -22,11 +22,11 @@ class McpDeviceTest {
                 instrumentation.runOnMainSync {
                     val views = all(opened.window.decorView)
                     ready = views.filterIsInstance<com.opc.baize.paper.PaperInkView>().any { it.isEnabled && it.page.width == 600 } &&
-                        views.filterIsInstance<android.widget.Switch>().any { it.text.toString() == "停笔后自动继续" && !it.isChecked }
+                        views.filterIsInstance<android.widget.Switch>().any { it.text.toString() == "自动识别" && !it.isChecked }
                 }
                 if (!ready) android.os.SystemClock.sleep(25)
             }
-            org.junit.Assert.assertTrue("Drawing page kept automatic AI enabled", ready)
+            org.junit.Assert.assertTrue("Page did not open with manual recognition", ready)
         } finally { activity?.let { current -> instrumentation.runOnMainSync { current.finish() } }; w.container.deleteRecursively() }
     }
     @Test fun structuredPaperCanBeWrittenOnErasedAndUndoneInPlace() {
