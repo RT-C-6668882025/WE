@@ -166,7 +166,7 @@ class MainActivity : Activity() {
         val workspaceFiles = WorkspaceFiles(this)
         allSessions.forEach { workspaceFiles.forSession(it) }
         val savedSession = prefs.getString("active_workspace_session", null)
-        val restorable = workspaceFiles.list().firstOrNull { workspaceFiles.sessionId(it) == savedSession }
+        val restorable = savedSession?.let { key -> workspaceFiles.list().firstOrNull { workspaceFiles.sessionId(it) == key } }
         (allSessions.find { it.id == savedSession && restorable != null } ?: restorable?.let {
             Session(savedSession!!, it.container.lastModified(), emptyList())
         })?.let { resumeSessionState(it) }
