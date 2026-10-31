@@ -49,6 +49,7 @@ class PaperActivity : Activity() {
     private var sourcePath: String? = null
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var autoRecognize = false
+    private lateinit var autoContinueSwitch: Switch
     private var interactionVersion = 0L
     private var workspaceId: String? = null
     private val recognizeLater = Runnable {
@@ -116,15 +117,15 @@ class PaperActivity : Activity() {
             val pdf = workspace?.let { LearningTurn.latestReady(it) } ?: readyPdf
             if (pdf != null && workspace != null) openGenerated(pdf, workspace.id, LearningTurn.sourcePath(pdf))
         }
-        button(requestRow, "停止") { interactionVersion++; studyJob?.cancel(); autoRecognize = false; handler.removeCallbacks(recognizeLater); status.text = "已停止自动继续，原页保留。" }
+        button(requestRow, "停止") { interactionVersion++; studyJob?.cancel(); autoContinueSwitch.isChecked = false; autoRecognize = false; autoStudy = false; handler.removeCallbacks(recognizeLater); status.text = "已停止自动继续，原页保留。" }
         val recognition = row()
         button(recognition, "识别选区 / 整页") { submit(RECOGNIZE) }
-        recognition.addView(Switch(this).apply {
+        autoContinueSwitch = Switch(this).apply {
             text = "停笔后自动继续"; isChecked = intent.getBooleanExtra("autoStudy", false); autoRecognize = isChecked; setOnCheckedChangeListener { _, enabled ->
-                autoRecognize = enabled; interactionVersion++; handler.removeCallbacks(recognizeLater)
+                autoRecognize = enabled; autoStudy = enabled; interactionVersion++; handler.removeCallbacks(recognizeLater)
                 status.text = if (enabled) "停笔后理解反馈并更新学习页，使用订阅额度。" else "已关闭停笔识别。"
             }
-        })
+        }; recognition.addView(autoContinueSwitch)
         recognition.addView(Switch(this).apply {
             text = "仅笔书写"; setOnCheckedChangeListener { _, enabled -> ink.stylusOnly = enabled }
         })
@@ -262,9 +263,17 @@ class PaperActivity : Activity() {
                 val sourceFile = source?.let { java.io.File(owner.root, it.removePrefix("/")).canonicalFile }
                     ?.takeIf { it.isFile && it.path.startsWith(owner.root.canonicalPath + "/memory/pages/") }
                 val id = repository.importPdf(android.net.Uri.fromFile(file))
+                val drawing = LearningPageRenderer.pageMap(file, 0)?.optString("mode") == "drawing"
                 prefs.edit().putString("paper_workspace_$id", workspace).putString("paper_source_$id",
                     sourceFile?.let { "/" + it.relativeTo(owner.root).path }).apply()
-                runOnUiThread { if (!destroyed) { loading = false; load(id, 0) } }
+                runOnUiThread { if (!destroyed) {
+                    if (drawing) {
+                        autoContinueSwitch.isChecked = false; autoRecognize = false; autoStudy = false
+                        handler.removeCallbacks(recognizeLater); toolsVisible = true
+                        extraTools.forEach { it.visibility = android.view.View.VISIBLE }
+                    }
+                    loading = false; load(id, 0)
+                } }
             } catch (e: Exception) { runOnUiThread { if (!destroyed) {
                 loading = false; ink.isEnabled = true; status.text = "学习页打开失败，原文件已保留。"
             } } }

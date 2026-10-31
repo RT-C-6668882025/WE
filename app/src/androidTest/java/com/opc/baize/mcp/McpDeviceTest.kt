@@ -4,6 +4,31 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Test
 
 class McpDeviceTest {
+    @Test fun openingDrawingContentTurnsOffAutomaticAiEvenWhenThePreviousPageEnabledIt() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
+        val w = com.opc.baize.agent.WorkspaceFiles(context).create("drawing-mode-${java.util.UUID.randomUUID()}")
+        var activity: android.app.Activity? = null
+        try {
+            val source = java.io.File(w.root, "memory/pages/drawing.md").apply { writeText("""{"we_page":1,"mode":"drawing","blocks":[{"id":"canvas","type":"drawing","height":300}]}""") }
+            val pdf = java.io.File(w.root, "memory/pages/drawing.pdf")
+            com.opc.baize.agent.LearningPageRenderer.render(source, pdf, true)
+            val opened = instrumentation.startActivitySync(android.content.Intent(context, com.opc.baize.paper.PaperActivity::class.java)
+                .putExtra("workspace", w.id).putExtra("generatedPdf", pdf.path).putExtra("autoStudy", true)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            activity = opened
+            fun all(view: android.view.View): List<android.view.View> = listOf(view) + if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { all(view.getChildAt(it)) } else emptyList()
+            var ready = false; val deadline = android.os.SystemClock.elapsedRealtime() + 10000
+            while (!ready && android.os.SystemClock.elapsedRealtime() < deadline) {
+                instrumentation.runOnMainSync {
+                    val views = all(opened.window.decorView)
+                    ready = views.filterIsInstance<com.opc.baize.paper.PaperInkView>().any { it.isEnabled && it.page.width == 600 } &&
+                        views.filterIsInstance<android.widget.Switch>().any { it.text.toString() == "停笔后自动继续" && !it.isChecked }
+                }
+                if (!ready) android.os.SystemClock.sleep(25)
+            }
+            org.junit.Assert.assertTrue("Drawing page kept automatic AI enabled", ready)
+        } finally { activity?.let { current -> instrumentation.runOnMainSync { current.finish() } }; w.container.deleteRecursively() }
+    }
     @Test fun structuredPaperCanBeWrittenOnErasedAndUndoneInPlace() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         val folder = java.io.File(context.cacheDir, "writable-${java.util.UUID.randomUUID()}").apply { mkdirs() }

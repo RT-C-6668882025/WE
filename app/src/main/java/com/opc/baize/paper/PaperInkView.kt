@@ -74,7 +74,7 @@ class PaperInkView(context: Context) : View(context) {
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (image == null || !isEnabled) return false
         if (stylusOnly && e.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS && e.getToolType(0) != MotionEvent.TOOL_TYPE_ERASER && mode == Mode.WRITE) return true
-        parent.requestDisallowInterceptTouchEvent(true)
+        parent?.requestDisallowInterceptTouchEvent(true)
         if (e.pointerCount > 1) { current.clear(); selecting = false; invalidate(); return true }
         val t = transform()
         if (e.actionMasked == MotionEvent.ACTION_DOWN && (t.pageX(e.x) !in 0f..page.width.toFloat() || t.pageY(e.y) !in 0f..page.height.toFloat())) return false
