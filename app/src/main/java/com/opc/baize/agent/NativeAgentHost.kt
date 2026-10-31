@@ -34,7 +34,10 @@ object NativeAgentHost {
     fun buildWithClient(context: Context, workspace: WeWorkspace, client: ModelClient, mcpJson: String): AgentRuntime {
         val builder = AndroidAgentRuntime.builder(context)
             .workspaceRoot(workspace.root)
-            .sessionEventLogRoot(File(context.noBackupFilesDir, "we-agent/${workspace.id}/events"))
+            // Android's /data/user/0 alias trips 0.3.0's junction detection when the
+            // log already exists (the next learning turn). Resolve only the trusted
+            // OS app directory; keep the runtime's checks on the log and its children.
+            .sessionEventLogRoot(File(context.noBackupFilesDir.canonicalFile, "we-agent/${workspace.id}/events"))
             // 0.3.0's native read tools use a partial JSON string decoder that rejects legal
             // escaped slashes in paths. Canonical JSON is semantically identical. Original
             // provider function-call items remain in SubscriptionAgentTransport's checkpoint.
