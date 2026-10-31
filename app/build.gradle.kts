@@ -22,13 +22,16 @@ val keystoreProps = Properties().apply {
 android {
     namespace = "com.opc.baize"   // 源码包目录沿用 com.opc.baize（改名只动 applicationId，降编译风险）
     compileSdk = 34
+    ndkVersion = "27.0.12077973"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
 
     defaultConfig {
         applicationId = "com.opc.moling"   // 墨灵：对外应用标识
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         minSdk = 26
         targetSdk = 34
-        versionCode = 46
-        versionName = "0.4.6"
+        versionCode = 47
+        versionName = "0.4.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 可选的局域网降级识别通道默认地址：开源版留空，用户如自建 Mac 端 server.py
         // 可在设置里填（不填则纯走 ML Kit 本地识别 + 用户配置的大模型）。

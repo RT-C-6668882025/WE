@@ -6,7 +6,7 @@ WE is an Android handwriting and AI workspace application, built on [Moling](htt
 
 [Downloads](https://github.com/RT-C-6668882025/WE/releases) · [Release notes](docs/releases/) · [Issues](https://github.com/RT-C-6668882025/WE/issues) · [中文](README.md)
 
-Current source version: **v0.4.6 Preview**. See Releases for APKs actually available on GitHub.
+Current source version: **v0.4.7 Preview**. See Releases for APKs actually available on GitHub.
 
 ## The interface
 
@@ -83,3 +83,5 @@ Maintained by **RT · [RT-C-6668882025](https://github.com/RT-C-6668882025)**.
 - Long Cang, Ma Shan Zheng and Zhi Mang Xing fonts, SIL Open Font License 1.1.
 
 WE retains **GPL-3.0**; see [LICENSE](LICENSE). Third-party code and fonts retain their respective licenses.
+
+Drawing uses an Android NDK/JNI port of the Drawpile classic brush mask kernel, with pressure-sensitive dabs. Full canvas, layers, blend modes and collaboration remain pending. See [port scope](docs/third-party/drawpile.md).

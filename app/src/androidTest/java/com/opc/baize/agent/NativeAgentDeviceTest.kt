@@ -7,6 +7,28 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NativeAgentDeviceTest {
+    @Test fun drawpileNativeBrushRendersPressureAndRestoresSavedStrokes() {
+        val points = listOf(
+            com.opc.baize.paper.InkPoint(30f, 40f, 0.1f, 0),
+            com.opc.baize.paper.InkPoint(100f, 40f, 1f, 100)
+        )
+        val stroke = com.opc.baize.paper.PaperStroke(points, 20f, android.graphics.Color.BLUE, com.opc.baize.paper.DrawpileBrush.ENGINE)
+        val page = com.opc.baize.paper.PaperPage(140, 80, 1, listOf(stroke))
+        val restored = com.opc.baize.paper.PaperPage.decode(page.encode())
+        org.junit.Assert.assertEquals(stroke, restored.strokes.single())
+        val bitmap = android.graphics.Bitmap.createBitmap(140, 80, android.graphics.Bitmap.Config.ARGB_8888)
+        val replay = android.graphics.Bitmap.createBitmap(140, 80, android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            com.opc.baize.paper.PaperStrokeRenderer.draw(android.graphics.Canvas(bitmap), stroke)
+            com.opc.baize.paper.PaperStrokeRenderer.draw(android.graphics.Canvas(replay), restored.strokes.single())
+            org.junit.Assert.assertTrue(bitmap.sameAs(replay))
+            org.junit.Assert.assertTrue(android.graphics.Color.alpha(bitmap.getPixel(100, 40)) > 0)
+            org.junit.Assert.assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(10, 10)))
+            fun coverage(x: Int) = (0 until 80).count { android.graphics.Color.alpha(bitmap.getPixel(x, it)) > 10 }
+            org.junit.Assert.assertTrue("pressure increases brush width", coverage(95) > coverage(32))
+            org.junit.Assert.assertTrue(android.graphics.Color.blue(bitmap.getPixel(95,40)) > 200)
+        } finally { bitmap.recycle(); replay.recycle() }
+    }
     @Test fun feedbackGeneratesANewPaperAndPreservesOriginalInk() = LearningLoopContract.verify(InstrumentationRegistry.getInstrumentation().targetContext)
     @Test fun skillMcpAndWorkspaceRunInTheAppProcess() = NativeRuntimeContract.verify(InstrumentationRegistry.getInstrumentation().targetContext)
     @Test fun generatedLearningPaperPaginatesAndRestoresVectors() {

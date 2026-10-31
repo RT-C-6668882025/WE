@@ -11,6 +11,7 @@ class PaperInkView(context: Context) : View(context) {
     enum class Mode { WRITE, MOVE, SELECT, ERASE }
     var mode = Mode.WRITE
     var penColor: Int = Color.BLACK
+    var brushEngine = "vector"
     var penWidth: Float = 1.8f
     var changed: ((PaperPage) -> Unit)? = null
     var strokeStarted: (() -> Unit)? = null
@@ -54,20 +55,16 @@ class PaperInkView(context: Context) : View(context) {
         data.strokes.forEach { stroke -> drawStroke(canvas, stroke) }
     }
     private fun drawStroke(canvas: Canvas, stroke: PaperStroke) {
-        if (stroke.points.isEmpty()) return
-        pen.color = stroke.color; pen.strokeWidth = stroke.width
-        val path = Path(); val first = stroke.points.first(); path.moveTo(first.x, first.y)
-        stroke.points.drop(1).forEach { path.lineTo(it.x, it.y) }
-        if (stroke.points.size == 1) canvas.drawCircle(first.x, first.y, stroke.width / 2, Paint(pen).apply { style = Paint.Style.FILL })
-        else canvas.drawPath(path, pen)
+        PaperStrokeRenderer.draw(canvas, stroke)
     }
+
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(Color.LTGRAY)
         val t = transform(); canvas.save(); canvas.translate(t.left, t.top); canvas.scale(t.scale, t.scale)
         canvas.clipRect(0f, 0f, page.width.toFloat(), page.height.toFloat())
         canvas.drawColor(Color.WHITE)
         image?.let { canvas.drawBitmap(it, null, RectF(0f, 0f, page.width.toFloat(), page.height.toFloat()), null) }
-        strokes(canvas, page); drawStroke(canvas, PaperStroke(current, penWidth, penColor))
+        strokes(canvas, page); drawStroke(canvas, PaperStroke(current, penWidth, penColor, brushEngine))
         region?.let { pen.color = Color.DKGRAY; pen.strokeWidth = 1f / t.scale; canvas.drawRect(it, pen) }
         canvas.restore()
     }
@@ -101,7 +98,7 @@ class PaperInkView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_UP -> {
                 if (mode == Mode.WRITE && current.isNotEmpty()) {
-                    current.add(InkPoint(x, y, e.pressure, e.eventTime)); val stroke = PaperStroke(current.toList(), penWidth, penColor); current.clear(); commit(page.strokes + stroke)
+                    current.add(InkPoint(x, y, e.pressure, e.eventTime)); val stroke = PaperStroke(current.toList(), penWidth, penColor, brushEngine); current.clear(); commit(page.strokes + stroke)
                 }
                 selecting = false; performClick()
             }

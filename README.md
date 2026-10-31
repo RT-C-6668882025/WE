@@ -6,7 +6,7 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 
 [下载安装包](https://github.com/RT-C-6668882025/WE/releases) · [版本记录](docs/releases/) · [反馈问题](https://github.com/RT-C-6668882025/WE/issues) · [English](README.en.md)
 
-当前源码版本：**v0.4.6 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
+当前源码版本：**v0.4.7 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
 
 ## 怎么使用
 
@@ -103,3 +103,5 @@ WE 由 **RT · [RT-C-6668882025](https://github.com/RT-C-6668882025)** 维护。
 - Long Cang、Ma Shan Zheng、Zhi Mang Xing：手写字体，SIL Open Font License 1.1。
 
 项目沿用 **GPL-3.0**，完整条款见 [LICENSE](LICENSE)。第三方组件与字体遵循各自许可。
+
+绘画模式已接入 Drawpile 经典笔刷蒙版核心的 Android NDK/JNI 移植，支持压感粗细；完整画布、图层、混色与协作仍待移植。工具栏提供选中标记及“按钮说明”。移植范围与上游版本见 [Drawpile 移植说明](docs/third-party/drawpile.md)。

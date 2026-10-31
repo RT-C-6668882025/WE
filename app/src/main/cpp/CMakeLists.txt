@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(we_drawpile C)
+add_library(we_drawpile SHARED drawpile_classic.c)
+target_compile_features(we_drawpile PRIVATE c_std_11)
+target_link_libraries(we_drawpile m)
