@@ -109,7 +109,7 @@ class PaperActivity : Activity() {
         }
         modes[PaperInkView.Mode.WRITE] = button(tools,"画笔") { chooseTool(PaperInkView.Mode.WRITE) }
         modes[PaperInkView.Mode.SELECT] = button(tools,"框选") {
-            if (ink.mode == PaperInkView.Mode.SELECT || ink.hasSelection) { ink.clearSelection(); chooseTool(PaperInkView.Mode.WRITE); status.text = "已取消框选" }
+            if (ink.mode == PaperInkView.Mode.SELECT || ink.hasSelection) { ink.clearSelection(); scopeChoice.setSelection(0); chooseTool(PaperInkView.Mode.WRITE); status.text = "已取消框选，发送范围恢复整页。" }
             else { scopeChoice.setSelection(1); chooseTool(PaperInkView.Mode.SELECT); status.text = "拖出矩形；再次点框选或轻点纸面取消。" }
         }
         modes[PaperInkView.Mode.ERASE] = button(tools,"橡皮") { chooseTool(PaperInkView.Mode.ERASE); status.text = "蓝色圆圈是擦除范围；当前擦除整条笔迹，可撤销。" }
@@ -118,7 +118,10 @@ class PaperActivity : Activity() {
         button(tools,"居中") { ink.resetView() }
         chooseTool(PaperInkView.Mode.WRITE)
         root.addView(ink, LinearLayout.LayoutParams(-1,0,1f))
-        ink.toolFeedback = { status.text = it }
+        ink.toolFeedback = {
+            if (it.startsWith("已取消框选")) scopeChoice.setSelection(0)
+            status.text = it
+        }
         ink.changed = { data ->
             handler.removeCallbacks(recognizeLater)
             if (autoRecognize) handler.postDelayed(recognizeLater, 1800)

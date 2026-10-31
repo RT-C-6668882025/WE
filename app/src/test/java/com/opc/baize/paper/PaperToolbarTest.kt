@@ -26,6 +26,9 @@ class PaperToolbarTest {
             assertFalse(all.filterIsInstance<Switch>().single { it.text == "自动识别" }.isChecked)
             val scope = all.filterIsInstance<Spinner>().single()
             assertEquals("整页",scope.selectedItem)
+            val selection = all.filterIsInstance<Button>().single { it.text.toString().endsWith("框选") }
+            selection.performClick(); assertEquals("选区",scope.selectedItem)
+            selection.performClick(); assertEquals("整页",scope.selectedItem)
         } finally { controller.pause().stop().destroy() }
     }
     @Test fun promptsAndSystemAreEditableAndSurviveRecreation() {
