@@ -6,7 +6,7 @@ WE is an Android handwriting and AI workspace application, built on [Moling](htt
 
 [Downloads](https://github.com/RT-C-6668882025/WE/releases) · [Release notes](docs/releases/) · [Issues](https://github.com/RT-C-6668882025/WE/issues) · [中文](README.md)
 
-Current source version: **v0.4.4 Preview**. See Releases for APKs actually available on GitHub.
+Current source version: **v0.4.5 Preview**. See Releases for APKs actually available on GitHub.
 
 ## The interface
 
@@ -17,6 +17,8 @@ Current source version: **v0.4.4 Preview**. See Releases for APKs actually avail
 - **About:** WE project information, licensing and upstream credits.
 
 Tap the bottom-left icon to open the Workspaces / Settings / About panel.
+
+Workspaces support name search, pinned-first sorting, batch archive and recoverable Trash. Restoring a task retains its identity, materials and ink.
 
 ## Handwriting and learning papers
 

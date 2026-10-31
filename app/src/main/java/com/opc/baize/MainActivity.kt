@@ -166,7 +166,8 @@ class MainActivity : Activity() {
         val workspaceFiles = WorkspaceFiles(this)
         allSessions.forEach { workspaceFiles.forSession(it) }
         val savedSession = prefs.getString("active_workspace_session", null)
-        (allSessions.find { it.id == savedSession } ?: workspaceFiles.list().firstOrNull { workspaceFiles.sessionId(it) == savedSession }?.let {
+        val restorable = workspaceFiles.list().firstOrNull { workspaceFiles.sessionId(it) == savedSession }
+        (allSessions.find { it.id == savedSession && restorable != null } ?: restorable?.let {
             Session(savedSession!!, it.container.lastModified(), emptyList())
         })?.let { resumeSessionState(it) }
         buildUi()
@@ -1313,6 +1314,11 @@ class MainActivity : Activity() {
 
     // ---------- 面板【工作区】 ----------
 
+    private var workspaceScope = "active"
+    private var workspaceSearch = ""
+    private var workspaceManaging = false
+    private val selectedWorkspaces = mutableSetOf<String>()
+
     @SuppressLint("SetTextI18n")
     private fun buildWorkspacePane(): View {
         val col = LinearLayout(this).apply {
@@ -1321,7 +1327,8 @@ class MainActivity : Activity() {
         }
         val files = WorkspaceFiles(this)
         allSessions.forEach { files.forSession(it) }
-        col.addView(android.widget.Button(this).apply {
+        val toolbar = LinearLayout(this)
+        toolbar.addView(android.widget.Button(this).apply {
             text = "＋ 新工作区"
             setOnClickListener {
                 if (!canSwitchTask()) return@setOnClickListener
@@ -1331,33 +1338,138 @@ class MainActivity : Activity() {
                 files.forSession(Session(curSessionId, curSessionTs, emptyList()))
                 book.resetBook(Texts.INTRO_TEXT); setStatus("idle"); panelDialog?.dismiss()
             }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        toolbar.addView(android.widget.Button(this).apply {
+            text = if (workspaceManaging) "完成管理" else "管理"
+            setOnClickListener { workspaceManaging = !workspaceManaging; selectedWorkspaces.clear(); showPanel(TAB_WORKSPACES) }
         })
-        val workspaces = files.list().sortedByDescending { it.container.lastModified() }
-        if (workspaces.isEmpty()) col.addView(TextView(this).apply {
-            text = "打开即可手写、语音或打字。任务会保存在这里，下次选择后继续。"
-            textSize = 14f; setTextColor(inkFaint)
-        })
-        for (workspace in workspaces) {
+        col.addView(toolbar)
+        val filters = LinearLayout(this)
+        for ((key, title) in listOf("active" to "进行中", "archived" to "已归档", "trash" to "回收站")) {
+            filters.addView(android.widget.Button(this).apply {
+                text = title; isSelected = workspaceScope == key
+                if (isSelected) setTypeface(null, Typeface.BOLD)
+                setOnClickListener { workspaceScope = key; selectedWorkspaces.clear(); showPanel(TAB_WORKSPACES) }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        col.addView(filters)
+        val search = android.widget.EditText(this).apply {
+            hint = "搜索工作区名称"; isSingleLine = true; setText(workspaceSearch)
+            contentDescription = "搜索工作区名称"
+        }; col.addView(search)
+        val sort = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("最近使用 · 置顶优先", "名称 · 置顶优先", "最早使用 · 置顶优先"))
+            setSelection(prefs.getInt("workspace_sort", 0).coerceIn(0, 2))
+        }; col.addView(sort)
+        val count = TextView(this).apply { textSize = 13f; setTextColor(inkGray) }; col.addView(count)
+        val batch = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; col.addView(batch)
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; col.addView(rows)
+        fun render() {
+            rows.removeAllViews(); batch.removeAllViews()
+            val order = listOf("recent", "name", "oldest")[sort.selectedItemPosition.coerceIn(0, 2)]
+            val workspaces = files.query(workspaceScope, workspaceSearch, order)
+            selectedWorkspaces.retainAll(workspaces.map { it.id }.toSet())
+            count.text = "${workspaces.size} 个工作区" + if (workspaceManaging) " · 已选 ${selectedWorkspaces.size} 个" else ""
+            if (workspaceManaging) {
+                val select = android.widget.Button(this).apply {
+                    text = if (selectedWorkspaces.size == workspaces.size && workspaces.isNotEmpty()) "取消全选" else "全选当前列表"
+                    setOnClickListener {
+                        if (selectedWorkspaces.size == workspaces.size) selectedWorkspaces.clear() else selectedWorkspaces.addAll(workspaces.map { it.id })
+                        render()
+                    }
+                }; batch.addView(select)
+                val actions = LinearLayout(this)
+                val choices = if (workspaceScope == "trash") listOf("restore" to "恢复所选") else
+                    listOf("pin" to "置顶所选", (if (workspaceScope == "archived") "unarchive" to "取消归档" else "archive" to "归档所选"), "trash" to "移到回收站")
+                for ((action, title) in choices) actions.addView(android.widget.Button(this).apply {
+                    text = title; textSize = 12f; isEnabled = selectedWorkspaces.isNotEmpty()
+                    setOnClickListener { manageWorkspaces(workspaces.filter { it.id in selectedWorkspaces }, action) }
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+                batch.addView(actions)
+            }
+            if (workspaces.isEmpty()) rows.addView(TextView(this).apply {
+                text = when { workspaceSearch.isNotBlank() -> "没有匹配的工作区。"
+                    workspaceScope == "trash" -> "回收站为空。移入的任务可在这里恢复。"
+                    workspaceScope == "archived" -> "暂时不用的任务可归档，资料和笔迹仍会保留。"
+                    else -> "打开即可手写、语音或打字。任务会保存在这里，下次选择后继续。" }
+                textSize = 14f; setTextColor(inkFaint)
+            })
+            val fmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+            for (workspace in workspaces) {
             val session = allSessions.find { it.id == files.sessionId(workspace) }
+            val state = files.state(workspace)
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            row.addView(TextView(this).apply {
-                text = workspace.name + if (session?.id == curSessionId) " · 当前" else ""
+            if (workspaceManaging) row.addView(android.widget.CheckBox(this).apply {
+                contentDescription = "选择工作区 ${workspace.name}"; isChecked = workspace.id in selectedWorkspaces
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) selectedWorkspaces.add(workspace.id) else selectedWorkspaces.remove(workspace.id)
+                    render()
+                }
+            })
+            val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, pxOf(12f), 0, pxOf(12f)) }
+            info.addView(TextView(this).apply {
+                text = (if (state.pinned) "置顶 · " else "") + workspace.name + if (session?.id == curSessionId) " · 当前" else ""
                 textSize = 17f; setTextColor(inkDark); setPadding(0, pxOf(16f), 0, pxOf(16f))
-                setOnClickListener {
+            })
+            info.addView(TextView(this).apply {
+                text = "${fmt.format(java.util.Date(if (state.trashedAt > 0) state.trashedAt else files.updatedAt(workspace)))}" +
+                    (session?.let { " · ${it.turns.size} 轮对话" } ?: " · 学习资料")
+                textSize = 12f; setTextColor(inkFaint)
+            })
+            info.contentDescription = if (state.trashedAt > 0) "已移到回收站 ${workspace.name}" else "继续工作区 ${workspace.name}"
+            info.setOnClickListener {
+                    if (workspaceManaging) {
+                        if (!selectedWorkspaces.add(workspace.id)) selectedWorkspaces.remove(workspace.id)
+                        render(); return@setOnClickListener
+                    }
+                    if (state.trashedAt > 0) { manageWorkspaces(listOf(workspace), "restore"); return@setOnClickListener }
                     if (!canSwitchTask()) return@setOnClickListener
                     val target = session ?: Session(files.sessionId(workspace) ?: "w_${workspace.id}", System.currentTimeMillis(), emptyList())
-                    files.attachSession(workspace, target.id)
+                    files.attachSession(workspace, target.id); files.manage(workspace, "open")
                     openHistorySession(target); panelDialog?.dismiss()
-                }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            row.addView(info, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(android.widget.Button(this).apply {
-                text = "资料"
-                setOnClickListener { if (canSwitchTask()) showWorkspaceActions(workspace) }
+                text = if (state.trashedAt > 0) "恢复" else "更多"
+                setOnClickListener { if (canSwitchTask()) {
+                    if (state.trashedAt > 0) manageWorkspaces(listOf(workspace), "restore") else showWorkspaceActions(workspace)
+                } }
             })
-            col.addView(row)
-            col.addView(View(this).apply { setBackgroundColor(hairline) }, LinearLayout.LayoutParams(-1, 1))
+            rows.addView(row)
+            rows.addView(View(this).apply { setBackgroundColor(hairline) }, LinearLayout.LayoutParams(-1, 1))
+            }
         }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { workspaceSearch = s.toString(); render() }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        sort.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { prefs.edit().putInt("workspace_sort", position).apply(); render() }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+        render()
         return scrollPane(col)
+    }
+    private fun manageWorkspaces(workspaces: List<WeWorkspace>, action: String) {
+        if (workspaces.isEmpty() || !canSwitchTask()) return
+        fun apply() {
+            try {
+                val files = WorkspaceFiles(this)
+                for (workspace in workspaces) files.manage(workspace, action)
+                if (action == "trash" && workspaces.any { files.sessionId(it) == curSessionId }) {
+                    cancelIdleTimer(); clearWritingSurface(); memory.clear(); store.clear()
+                    if (hwActive()) { idleDetector.reset(); pollWasGrowing = false }
+                    startNewSession(); book.resetBook(Texts.INTRO_TEXT); setStatus("idle")
+                }
+                selectedWorkspaces.clear(); showPanel(TAB_WORKSPACES)
+            } catch (e: Exception) { android.widget.Toast.makeText(this, "管理未全部完成：${e.message}", android.widget.Toast.LENGTH_LONG).show(); showPanel(TAB_WORKSPACES) }
+        }
+        if (action == "trash") AlertDialog.Builder(this).setTitle("移到回收站？")
+            .setMessage("将移入 ${workspaces.size} 个工作区。对话、资料和笔迹保留，可在回收站恢复。")
+            .setNegativeButton("取消", null).setPositiveButton("移入") { _, _ -> apply() }.show()
+        else apply()
     }
     private fun canSwitchTask(): Boolean {
         if (statusState != "thinking") return true
@@ -1366,8 +1478,10 @@ class MainActivity : Activity() {
     }
     private var pdfWorkspace: String? = null
     private fun showWorkspaceActions(workspace: WeWorkspace) {
+        val management = WorkspaceFiles(this).state(workspace)
         AlertDialog.Builder(this).setTitle(workspace.name)
-            .setItems(arrayOf("打开最近学习页", "导入 PDF", "查看文件", "重命名", "删除工作区")) { _, which ->
+            .setItems(arrayOf("打开最近学习页", "导入 PDF", "查看文件", "重命名", "移到回收站",
+                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档")) { _, which ->
                 when (which) {
                     0 -> {
                         val pdf = LearningTurn.latestReady(workspace)
@@ -1382,14 +1496,9 @@ class MainActivity : Activity() {
                         }, 73)
                     }
                     2 -> showWorkspaceFiles(workspace)
-                    4 -> AlertDialog.Builder(this).setTitle("删除工作区？")
-                        .setMessage("将删除“${workspace.name}”的对话、文件和学习页，无法恢复。")
-                        .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ ->
-                            val id = WorkspaceFiles(this).sessionId(workspace)
-                            id?.let { key -> deleteSession(allSessions.find { it.id == key } ?: Session(key, 0, emptyList())) }
-                            if (!workspace.container.deleteRecursively()) android.widget.Toast.makeText(this, "部分文件未能删除，请重试。", android.widget.Toast.LENGTH_LONG).show()
-                            showPanel(TAB_WORKSPACES)
-                        }.show()
+                    4 -> manageWorkspaces(listOf(workspace), "trash")
+                    5 -> manageWorkspaces(listOf(workspace), if (management.pinned) "unpin" else "pin")
+                    6 -> manageWorkspaces(listOf(workspace), if (management.archived) "unarchive" else "archive")
                     3 -> {
                         val editor = android.widget.EditText(this).apply { setText(workspace.name) }
                         AlertDialog.Builder(this).setTitle("工作区名称").setView(editor).setNegativeButton("取消", null)

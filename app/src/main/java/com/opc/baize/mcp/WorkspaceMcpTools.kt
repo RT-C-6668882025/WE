@@ -75,6 +75,7 @@ class WorkspaceMcpTools(private val context: Context,
         return files.list().firstOrNull { it.id == id } ?: error("Workspace not found")
     }
     private fun describe(w: WeWorkspace) = JSONObject().put("id", w.id).put("name", w.name)
+        .put("pinned", files.state(w).pinned).put("archived", files.state(w).archived)
         .put("latest_page", LearningTurn.latestReady(w)?.let { "/memory/pages/${it.name}" } ?: JSONObject.NULL)
     private fun file(w: WeWorkspace, path: String): File {
         val relative = path.removePrefix("/")
@@ -91,7 +92,15 @@ class WorkspaceMcpTools(private val context: Context,
         return target
     }
     private fun call(name: String, a: JSONObject): JSONObject = when (name) {
-        "list_workspaces" -> JSONObject().put("workspaces", JSONArray(files.list().map(::describe)))
+        "list_workspaces" -> {
+            val scope = a.optString("scope", "all"); require(scope in setOf("active", "archived", "all"))
+            JSONObject().put("workspaces", JSONArray(files.query(scope, a.optString("query")).map(::describe)))
+        }
+        "manage_workspace" -> {
+            val w = workspace(a); require(w.name == a.getString("expected_name")) { "Workspace name changed; read again" }
+            val action = a.getString("action"); require(action in setOf("pin", "unpin", "archive", "unarchive")) { "Unsupported management action" }
+            files.manage(w, action); describe(w)
+        }
         "create_workspace" -> describe(files.create(a.getString("name")))
         "rename_workspace" -> {
             val w = workspace(a); require(w.name == a.getString("expected_name")) { "Workspace name changed; read again" }

@@ -14,7 +14,7 @@ Android 前台服务在切后台后继续连接，通知栏可停止；进程回
 
 工具定义唯一来源：`app/src/main/assets/we-mcp-tools.json`，Android 和中继共用。
 
-- `list_workspaces` / `create_workspace` / `rename_workspace`
+- `list_workspaces` / `create_workspace` / `rename_workspace` / `manage_workspace`：支持名称与归档筛选、置顶和归档；回收站操作只在应用内进行。
 - `list_files` / `read_file` / `write_file`：只访问当前工作区 `memory/` 与 `.agents/skills/`；文本不超过 256 KB。现有文件写入需匹配 `expected_sha256`，学习页与会话快照不允许覆盖。
 - `read_page`：读取工作区 PDF 的指定页、已保存的笔迹向量和反馈，同时返回 PDF+笔迹的 MCP 图像，由外部 Agent 使用视觉能力理解。不会上传尚未落盘的当前笔画。
 - `publish_learning_page`：传入 request 和 content，生成有手写留白的新 PDF；原页和笔迹保留。打开工作区“资料 → 最近学习页”，或在学习纸上点“查看生成页”继续。

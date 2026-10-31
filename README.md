@@ -6,7 +6,7 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 
 [下载安装包](https://github.com/RT-C-6668882025/WE/releases) · [版本记录](docs/releases/) · [反馈问题](https://github.com/RT-C-6668882025/WE/issues) · [English](README.en.md)
 
-当前源码版本：**v0.4.4 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
+当前源码版本：**v0.4.5 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
 
 ## 怎么使用
 
@@ -23,6 +23,8 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 - “＋ 新工作区”开始新任务。
 - 每个工作区的“资料”中可查看文件、导入 PDF、打开最近学习页、重命名或删除工作区。
 - PDF、学习页面等操作放在对应工作区内，设置中不再提供独立工作台入口。
+
+工作区管理支持名称搜索、置顶、最近/名称排序、批量归档与回收站恢复。移入回收站保留会话、资料及笔迹，恢复后继续原任务。
 
 ### 设置：配置能力
 

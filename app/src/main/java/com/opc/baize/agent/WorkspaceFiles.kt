@@ -16,8 +16,11 @@ data class WeWorkspace(val id: String, val name: String, val container: File) {
 
 class WorkspaceFiles(private val context: Context) {
     private val base = File(context.filesDir, "we-workspaces").apply { mkdirs() }
-    fun list(): List<WeWorkspace> = base.listFiles().orEmpty().filter { it.isDirectory && runCatching { UUID.fromString(it.name) }.isSuccess }
-        .map { WeWorkspace(it.name, File(it, "title.txt").takeIf(File::isFile)?.readText()?.take(80) ?: it.name, it) }.sortedBy { it.name }
+    fun all(): List<WeWorkspace> = synchronized(managementLock) { base.listFiles().orEmpty().filter { it.isDirectory && runCatching { UUID.fromString(it.name) }.isSuccess }
+        .map { dir -> val title = File(dir, "title.txt")
+            WeWorkspace(dir.name, if (title.exists() || File(title.path + ".bak").exists()) AtomicFile(title).openRead().bufferedReader().use { it.readText().take(80) } else dir.name, dir)
+        }.sortedBy { it.name } }
+    fun list(): List<WeWorkspace> = all().filter { state(it).trashedAt == 0L }
     fun create(name: String): WeWorkspace {
         require(name.isNotBlank() && name.length <= 80) { "请输入 1～80 个字的工作区名称" }
         val id = UUID.randomUUID().toString()
@@ -27,8 +30,16 @@ class WorkspaceFiles(private val context: Context) {
     }
     /** History is indexed in the same workspace list; the original session archive is retained. */
     fun forSession(session: com.opc.baize.core.Session): WeWorkspace {
-        val existing = list().firstOrNull { sessionId(it) == session.id }
-        val workspace = existing ?: create(if (session.isEmpty()) "新工作区" else session.summary()).also { attachSession(it, session.id) }
+        // Trashed sessions stay indexed so the legacy archive cannot resurrect them.
+        val existing = all().firstOrNull { sessionId(it) == session.id }
+        var workspace = existing ?: create(if (session.isEmpty()) "新工作区" else session.summary()).also {
+            attachSession(it, session.id)
+            if (session.isEmpty()) LearningTurn.write(File(it.container, "automatic-title.txt"), "pending")
+        }
+        if (state(workspace).trashedAt > 0) return workspace
+        if (!session.isEmpty() && File(workspace.container, "automatic-title.txt").exists()) {
+            rename(workspace, session.summary()); workspace = workspace.copy(name = session.summary())
+        }
         val text = session.turns.joinToString("\n\n") { "你：${it.question}\nWE：${it.reply}" }
         val source = File(workspace.root, "memory/pages/conversation.md")
         if (text.isNotEmpty() && (!source.isFile || source.readText() != text)) {
@@ -41,9 +52,54 @@ class WorkspaceFiles(private val context: Context) {
         require(id.isNotBlank() && id.length <= 256)
         LearningTurn.write(File(workspace.container, "session-id.txt"), id)
     }
-    fun rename(workspace: WeWorkspace, name: String) {
+    fun rename(workspace: WeWorkspace, name: String) = synchronized(managementLock) {
         require(name.isNotBlank() && name.length <= 80) { "请输入 1～80 个字的名称" }
         LearningTurn.write(File(workspace.container, "title.txt"), name.trim())
+        File(workspace.container, "automatic-title.txt").delete()
+    }
+    data class State(val pinned: Boolean = false, val archived: Boolean = false, val trashedAt: Long = 0, val openedAt: Long = 0)
+    fun state(workspace: WeWorkspace): State = synchronized(managementLock) {
+        val file = File(workspace.container, "management.json")
+        if (!file.exists() && !File(file.path + ".bak").exists()) return State()
+        val value = JSONObject(AtomicFile(file).openRead().bufferedReader().use { it.readText() })
+        return State(value.optBoolean("pinned"), value.optBoolean("archived"), value.optLong("trashedAt"), value.optLong("openedAt"))
+    }
+    fun manage(workspace: WeWorkspace, action: String) = synchronized(managementLock) {
+        require(all().any { it.id == workspace.id }) { "工作区不存在" }
+        val current = state(workspace)
+        val next = when (action) {
+            "pin" -> current.copy(pinned = true)
+            "unpin" -> current.copy(pinned = false)
+            "archive" -> current.copy(archived = true)
+            "unarchive" -> current.copy(archived = false)
+            "trash" -> if (current.trashedAt > 0) current else current.copy(trashedAt = System.currentTimeMillis())
+            "restore" -> current.copy(trashedAt = 0)
+            "open" -> { require(current.trashedAt == 0L) { "请先恢复工作区" }; current.copy(openedAt = System.currentTimeMillis()) }
+            else -> error("未知管理操作")
+        }
+        LearningTurn.write(File(workspace.container, "management.json"), JSONObject().put("pinned", next.pinned)
+            .put("archived", next.archived).put("trashedAt", next.trashedAt).put("openedAt", next.openedAt).toString())
+    }
+    fun updatedAt(workspace: WeWorkspace): Long = maxOf(state(workspace).openedAt,
+        workspace.container.lastModified(), workspace.transcript.lastModified(),
+        File(workspace.container, "workspace/memory/pages/conversation.md").lastModified(),
+        File(workspace.container, "turns").listFiles().orEmpty().maxOfOrNull { it.lastModified() } ?: 0)
+    /** Pinned first in every view; search is case insensitive and never changes stored names. */
+    fun query(scope: String = "active", text: String = "", sort: String = "recent"): List<WeWorkspace> {
+        val candidates = all().filter { w ->
+            val s = state(w)
+            val visible = when (scope) { "trash" -> s.trashedAt > 0; "archived" -> s.trashedAt == 0L && s.archived
+                "all" -> s.trashedAt == 0L; else -> s.trashedAt == 0L && !s.archived }
+            visible && w.name.contains(text.trim(), ignoreCase = true)
+        }
+        val pinned = candidates.associate { it.id to state(it).pinned }
+        val updated = candidates.associate { it.id to updatedAt(it) }
+        return candidates.sortedWith(compareByDescending<WeWorkspace> { pinned.getValue(it.id) }
+            .thenComparator { a, b -> when (sort) {
+                "name" -> a.name.compareTo(b.name, ignoreCase = true)
+                "oldest" -> updated.getValue(a.id).compareTo(updated.getValue(b.id))
+                else -> updated.getValue(b.id).compareTo(updated.getValue(a.id))
+            } }.thenBy { it.id })
     }
     fun skillNames(workspace: WeWorkspace): List<String> = File(workspace.root, ".agents/skills").listFiles().orEmpty()
         .filter { it.isDirectory && File(it, "SKILL.md").isFile }.map { it.name }.sorted()
@@ -95,6 +151,7 @@ class WorkspaceFiles(private val context: Context) {
         catch (e: Exception) { atomic.failWrite(out); throw e }
     }
     companion object {
+        private val managementLock = Any()
         private fun readBounded(input: java.io.InputStream, max: Int): ByteArray {
             require(max >= 0) { "Skill 总大小超过 10 MB" }
             val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
