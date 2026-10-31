@@ -1,7 +1,7 @@
 name: Android native agent
 on:
   push:
-    branches: ["feat/android-native-agent"]
+    branches: ["feat/android-native-agent", "feat/continuous-learning-paper"]
   pull_request:
     paths: ["app/**", ".github/workflows/native-agent.yml"]
 permissions:
@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Cancel superseded native builds
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/android-native-agent'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
