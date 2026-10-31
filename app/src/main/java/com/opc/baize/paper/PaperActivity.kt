@@ -165,6 +165,13 @@ class PaperActivity : Activity() {
         val generated = intent.getStringExtra("generatedPdf")
         setInputMode(if (intent.hasExtra("entryMode")) intent.getStringExtra("entryMode") == "drawing" else prefs.getBoolean("paper_drawing_${workspaceId.orEmpty()}",false))
         workspaceId = intent.getStringExtra("workspace")
+        if (intent.getBooleanExtra("focusInput",false)) {
+            scopeChoice.setSelection(2)
+            requestField.post {
+                requestField.requestFocus()
+                (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(requestField,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
         autoStudy = false
         if (generated != null && workspaceId != null) {
             openGenerated(java.io.File(generated), workspaceId!!, intent.getStringExtra("sourcePath"))

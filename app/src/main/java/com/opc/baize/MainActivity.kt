@@ -195,9 +195,9 @@ class MainActivity : Activity() {
         // 成功 → 停用 InkView 的输入与自绘、书写走驱动直写（写一点出一点）。任一步失败 →
         // hwLayer 保持 null，无缝回退 InkView 自绘+预测老路（非华为设备的常规路径）。
         // 生效与否全靠 adb logcat -s BaizeHW 判断。
-        if (useDirectInk() && HwHandwritingLayer.isFrameworkPresent()) {
-            installHwLayer()
-        }
+        // New input uses the shared workspace canvas; the home book retains archive viewing.
+        ink.visibility = View.GONE
+
 
         // 重启恢复：有存档静态重铺停末页；否则引导语走书写节奏
         book.post {
@@ -387,13 +387,7 @@ class MainActivity : Activity() {
         fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; setOnClickListener { action() } }) }
         inputButton("手写") { if (canSwitchTask()) openWorkspaceCanvas(false) }
         inputButton("绘画") { if (canSwitchTask()) openWorkspaceCanvas(true) }
-        inputButton("打字") {
-            if (canSwitchTask()) {
-                val editor = android.widget.EditText(this).apply { hint = "写下需求"; minLines = 2 }
-                AlertDialog.Builder(this).setTitle("输入").setView(editor).setNegativeButton("取消", null)
-                    .setPositiveButton("发送") { _, _ -> submitText(editor.text.toString()) }.show()
-            }
-        }
+        inputButton("打字") { if (canSwitchTask()) openWorkspaceCanvas(false,typing = true) }
         root.addView(inputs, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = px(10f); bottomMargin = px(8f) })
         root.addView(seal, sealLp)
         setContentView(root)
@@ -1535,7 +1529,7 @@ class MainActivity : Activity() {
             } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this, e.message, android.widget.Toast.LENGTH_LONG).show() } }
         }
     }
-    private fun openWorkspaceCanvas(drawing: Boolean, selected: WeWorkspace? = null) {
+    private fun openWorkspaceCanvas(drawing: Boolean, selected: WeWorkspace? = null, typing: Boolean = false) {
         val session = Session(curSessionId, curSessionTs, curTurns.toList())
         worker.execute {
             try {
@@ -1547,7 +1541,7 @@ class MainActivity : Activity() {
                 if (latest != null) {
                     ui.post { startActivity(android.content.Intent(this,com.opc.baize.paper.PaperActivity::class.java)
                         .putExtra("workspace",workspace.id).putExtra("generatedPdf",latest.path)
-                        .putExtra("sourcePath",LearningTurn.sourcePath(latest)).putExtra("entryMode",if (drawing) "drawing" else "handwriting")) }
+                        .putExtra("sourcePath",LearningTurn.sourcePath(latest)).putExtra("focusInput",typing).putExtra("entryMode",if (drawing) "drawing" else "handwriting")) }
                 } else {
                     val page = org.json.JSONObject().put("we_page",1).put("mode",if (drawing) "drawing" else "handwriting")
                         .put("blocks",org.json.JSONArray().put(org.json.JSONObject().put("id","canvas").put("type","drawing").put("height",500).put("grid","blank")))
@@ -1555,7 +1549,7 @@ class MainActivity : Activity() {
                     turn.publishExternal(page.toString()) { source,pdf -> LearningPageRenderer.render(source,pdf,true) }
                     ui.post { startActivity(android.content.Intent(this,com.opc.baize.paper.PaperActivity::class.java)
                         .putExtra("workspace",workspace.id).putExtra("generatedPdf",turn.pdf.path)
-                        .putExtra("sourcePath",LearningTurn.sourcePath(turn.pdf)).putExtra("entryMode",if (drawing) "drawing" else "handwriting")) }
+                        .putExtra("sourcePath",LearningTurn.sourcePath(turn.pdf)).putExtra("focusInput",typing).putExtra("entryMode",if (drawing) "drawing" else "handwriting")) }
                 }
             } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this,"画布打开失败：${e.message}",android.widget.Toast.LENGTH_LONG).show() } }
         }
