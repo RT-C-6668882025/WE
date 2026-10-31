@@ -24,6 +24,7 @@ class GeneratedContentEditorTest {
         var saved: String? = null
         try {
             GeneratedContentEditor.show(controller.get(),original) { saved = it }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             val dialog = ShadowAlertDialog.getLatestAlertDialog()
             fun fields(view: View): List<EditText> = if (view is EditText) listOf(view)
                 else if (view is ViewGroup) (0 until view.childCount).flatMap { fields(view.getChildAt(it)) } else emptyList()
