@@ -57,6 +57,18 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
     }
 
     private fun update(state: String) { record.put("state", state); write(journal, record.toString()) }
+    /** External Agent supplies content; it never needs access to subscription credentials. */
+    fun publishExternal(text: String, render: (File, File) -> Unit) {
+        require(record.getString("state") == "prepared")
+        update("running")
+        try {
+            write(source, text); render(source, pdf)
+            require(pdf.isFile && pdf.length() > 0) { "Page rendering failed" }
+            val previous = workspace.transcript.takeIf(File::isFile)?.readText().orEmpty()
+            write(workspace.transcript, (previous + "\n你：${record.getString("request")}\n外部 Agent：已生成学习页\n页面：/memory/pages/${source.name}\n").takeLast(256000))
+            update("ready")
+        } catch (e: Exception) { update("interrupted"); throw e }
+    }
     companion object {
         fun prepare(workspace: WeWorkspace, request: String, sourcePath: String? = null, origin: String = ""): LearningTurn {
             require(request.isNotBlank() && request.length <= 48000) { "请输入需求（最多 48000 字）。" }

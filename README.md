@@ -6,7 +6,7 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 
 [下载安装包](https://github.com/RT-C-6668882025/WE/releases) · [版本记录](docs/releases/) · [反馈问题](https://github.com/RT-C-6668882025/WE/issues) · [English](README.en.md)
 
-当前源码版本：**v0.4.3 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
+当前源码版本：**v0.4.4 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
 
 ## 怎么使用
 
@@ -46,7 +46,9 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 
 当前内置 Android Agent Runtime 已具备文件工具、Skill 读取和公开 HTTPS MCP 客户端能力，相关实现见 [Android 原生 Agent](docs/android-native-agent.md)。这些是内部运行能力，不等于对外控制接口。
 
-**WordTok 式对外 MCP 服务、固定连接地址和配对尚未接入。** 目前不能把 WE 当成已开放的 MCP 服务，让外部 Agent 直接连接控制。
+新增对外 MCP：设置 → **Agent 连接 · MCP**。同一 Android 的原生客户端可直接连接本机端点；外部 Agent 可读工作区与手写页面图像、读写资料/Skill，并发布新的学习页。写入有 operation_id 回执和版本检查，原页与笔迹保留。
+
+WordTok 式固定公网地址采用“HTTPS 中继转发、Android 执行”的配对结构，源码及部署步骤见 [MCP 连接](mcp/README.md)。**没有预先托管的 WE 公网域名，需先独立部署中继；不能使用 WordTok 原地址。** 本机地址不能从云端直接访问。
 
 当前生成页面以文本学习纸为主。可编辑图形框架、任意 Python/Node Skill 脚本、MCP OAuth 和 stdio 传输尚未支持。DSH Go、RikkaHub、Excalidraw 和 Jetpack Ink 为已研究的候选，未集成。具体见 [实现、验证与边界](docs/research/continuous-learning.md)。Google Drive 同步暂未接入。
 
@@ -56,7 +58,7 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 
 1. 从本仓库 [Releases](https://github.com/RT-C-6668882025/WE/releases) 下载 WE APK 并安装。
 2. 打开“设置”，选择 ChatGPT 订阅或原 API 通道。
-3. 使用订阅时，完成浏览器授权，刷新账号模型列表，选择模型并点击“保存选择并启用订阅”。
+3. 使用订阅时，完成浏览器授权（保留原会话页面，不要刷新），刷新账号模型列表，选择模型并点击“保存选择并启用订阅”。
 4. 返回首页开始输入，或从工作区打开已有任务。
 
 订阅凭据通过 Android Keystore 加密保存在本机。明确退出登录会删除会话。
@@ -79,10 +81,10 @@ Android 仪器测试：
 
 ```bash
 ./gradlew connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest,com.opc.baize.mcp.McpDeviceTest
 ```
 
-当前本地验证已通过 99 项单元测试、Lint 和 APK 构建，包含旧任务续接、工作区索引、资料保留及界面入口检查。模拟模型和本机回调测试不替代真实订阅授权、识图准确率、语音服务或平板笔感验证。
+当前本地验证已通过 完整单元测试、Lint 和 APK 构建，包含旧任务续接、工作区索引、资料保留及界面入口检查。模拟模型和本机回调测试不替代真实订阅授权、识图准确率、语音服务或平板笔感验证。
 
 ## 项目与致谢
 
@@ -90,6 +92,7 @@ WE 由 **RT · [RT-C-6668882025](https://github.com/RT-C-6668882025)** 维护。
 
 - [Moling](https://github.com/xiaoxi668v-prog/moling)：原项目及手写底座，作者小西校长。
 - [Android Agent Runtime](https://github.com/NoHarry/android-agent-runtime)：设备内 Agent、Skill 与 MCP 客户端能力，使用 `0.3.0`，MIT；[随附许可](app/src/main/assets/agent-licenses/Android-Agent-Runtime-MIT.txt)。
+- [NanoHTTPD](https://github.com/NanoHttpd/nanohttpd)：Android 本机 MCP HTTP 层，2.3.1，BSD-3-Clause；许可随 APK 附带。
 - Google ML Kit Digital Ink Recognition：本机笔迹识别。
 - AndroidX：文档访问与运动预测等组件。
 - Long Cang、Ma Shan Zheng、Zhi Mang Xing：手写字体，SIL Open Font License 1.1。

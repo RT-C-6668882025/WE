@@ -4,7 +4,7 @@ on:
     branches: ["main", "feat/android-native-agent", "feat/continuous-learning-paper"]
   workflow_dispatch:
   pull_request:
-    paths: ["app/**", ".github/workflows/native-agent.yml"]
+    paths: ["app/**", "mcp/**", ".github/workflows/native-agent.yml"]
 permissions:
   contents: read
   actions: write
@@ -34,6 +34,11 @@ jobs:
           packages: "platform-tools platforms;android-34 build-tools;34.0.0"
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify the paired MCP relay
+        run: node --test mcp/relay.test.mjs
       - name: Unit tests, lint, app and device test builds
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --no-daemon
       - name: Enable KVM
@@ -48,7 +53,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
           script: |
-            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest --no-daemon
+            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest,com.opc.baize.mcp.McpDeviceTest --no-daemon
             bash tools/check-persistent-session-device.sh
       - uses: actions/upload-artifact@v4
         if: always()
@@ -80,11 +85,11 @@ jobs:
       - name: Download the tested APK from this exact run
         run: |
           gh run download "$GITHUB_RUN_ID" --name we-android-native-agent-apk --dir apk
-          mv apk/app-debug.apk apk/WE-v0.4.3-preview.apk
+          mv apk/app-debug.apk apk/WE-v0.4.4-preview.apk
           cd apk
-          sha256sum WE-v0.4.3-preview.apk > SHA256SUMS.txt
+          sha256sum WE-v0.4.4-preview.apk > SHA256SUMS.txt
       - name: Publish WE preview
         run: |
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
-          gh release create v0.4.3-we-preview apk/WE-v0.4.3-preview.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "WE v0.4.3 Preview" --notes-file docs/releases/v0.4.3.md
+          gh release create v0.4.4-we-preview apk/WE-v0.4.4-preview.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "WE v0.4.4 Preview" --notes-file docs/releases/v0.4.4.md

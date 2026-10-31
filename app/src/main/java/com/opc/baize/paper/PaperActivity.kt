@@ -104,7 +104,7 @@ class PaperActivity : Activity() {
         }
         button(requestRow, "查看生成页") {
             val workspace = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id } }
-            val pdf = readyPdf ?: workspace?.let { LearningTurn.latestReady(it) }
+            val pdf = workspace?.let { LearningTurn.latestReady(it) } ?: readyPdf
             if (pdf != null && workspace != null) openGenerated(pdf, workspace.id, LearningTurn.sourcePath(pdf))
         }
         button(requestRow, "停止") { interactionVersion++; studyJob?.cancel(); autoRecognize = false; handler.removeCallbacks(recognizeLater); status.text = "已停止自动继续，原页保留。" }

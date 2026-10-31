@@ -4,6 +4,9 @@
 
     <!-- 唯一权限：联网（大模型直连 + ML Kit 模型下载 + 可选局域网识别降级通道） -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="@string/app_name"
@@ -15,6 +18,11 @@
         <!-- usesCleartextTraffic：可选的局域网识别降级通道多为 http://…（用户自建 server.py），
              targetSdk 34 默认禁明文，故显式放开 -->
 
+        <service android:name=".mcp.McpService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled MCP automation endpoint receiving paired Agent commands and executing workspace actions on this device" />
+        </service>
+        <activity android:name=".mcp.McpSettingsActivity" android:exported="false" />
         <activity android:name=".paper.PaperActivity" android:exported="false" />
         <activity android:name=".agent.AgentWorkspaceActivity" android:exported="false" />
         <activity android:name=".subscription.SubscriptionSettingsActivity" android:exported="false" />

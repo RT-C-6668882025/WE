@@ -27,8 +27,8 @@ android {
         applicationId = "com.opc.moling"   // 墨灵：对外应用标识
         minSdk = 26
         targetSdk = 34
-        versionCode = 43
-        versionName = "0.4.3"
+        versionCode = 44
+        versionName = "0.4.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 可选的局域网降级识别通道默认地址：开源版留空，用户如自建 Mac 端 server.py
         // 可在设置里填（不填则纯走 ML Kit 本地识别 + 用户配置的大模型）。
@@ -91,6 +91,8 @@ android {
 }
 
 dependencies {
+    // BSD-3-Clause: embedded HTTP framing for the Android loopback MCP endpoint.
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     // MIT: embedded Android/JVM agent loop, Skills, workspace and MCP client.
     implementation("cc.noharry:agent-runtime-android:0.3.0")
     implementation("androidx.documentfile:documentfile:1.0.1")

@@ -82,6 +82,7 @@ public final class SubscriptionGateway implements SubscriptionConnection {
     }
     public boolean isAuthorized() { return authorized; }
     public String diagnostics() { return client.diagnostics(); }
+    public String loginProgress() { return client.loginProgress(); }
     public synchronized String signIn(Browser browser) throws Exception { return signIn(client, browser); }
     private synchronized String signIn(SubscriptionProbeClient owner, Browser browser) throws Exception {
         if (owner != client) throw new SubscriptionProtocol.Failure("cancelled");

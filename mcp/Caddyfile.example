@@ -1,0 +1,4 @@
+we-mcp.example.com {
+    # Do not enable access logging: MCP paths contain pairing credentials.
+    reverse_proxy 127.0.0.1:8787
+}

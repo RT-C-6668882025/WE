@@ -1215,6 +1215,10 @@ class MainActivity : Activity() {
             setOnClickListener { startActivity(android.content.Intent(this@MainActivity, SubscriptionSettingsActivity::class.java)) }
         })
         col.addView(hint("订阅登录会在本机加密保存，重启应用后恢复。切换原 API 沿用下方配置，不自动跨通道扣费。"))
+        col.addView(android.widget.Button(this).apply {
+            text = "Agent 连接 · MCP"
+            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, com.opc.baize.mcp.McpSettingsActivity::class.java)) }
+        })
         gap(12f)
 
         // (b) 大模型 API 设置

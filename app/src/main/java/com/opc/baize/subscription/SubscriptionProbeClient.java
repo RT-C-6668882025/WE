@@ -24,6 +24,7 @@ final class SubscriptionProbeClient implements Closeable {
     private volatile LoopbackReceiver listener;
     private final ProbeDiagnostics diagnostics = new ProbeDiagnostics();
     String diagnostics() { return diagnostics.snapshot(); }
+    String loginProgress() { return diagnostics.progress(); }
     String healthUrl() { LoopbackReceiver r = listener; return r == null ? null : r.healthUrl(); }
     void beginOperation() { diagnostics.reset(); }
     private final ProbeHttp http = new ProbeHttp(diagnostics);

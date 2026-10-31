@@ -6,7 +6,7 @@ WE is an Android handwriting and AI workspace application, built on [Moling](htt
 
 [Downloads](https://github.com/RT-C-6668882025/WE/releases) · [Release notes](docs/releases/) · [Issues](https://github.com/RT-C-6668882025/WE/issues) · [中文](README.md)
 
-Current source version: **v0.4.3 Preview**. See Releases for APKs actually available on GitHub.
+Current source version: **v0.4.4 Preview**. See Releases for APKs actually available on GitHub.
 
 ## The interface
 
@@ -30,7 +30,11 @@ Orchestration, files and ink live on Android. Model inference uses your selected
 
 The embedded Android Agent Runtime provides file tools, Skill reading and a public HTTPS MCP client. This is **not an external MCP server**.
 
-WordTok-style external MCP control, a fixed connection URL and pairing are **not implemented**. Current generated papers are primarily text. Editable graphical scenes, arbitrary Python/Node Skill scripts, MCP OAuth, stdio and Google Drive sync are not supported. DSH Go, RikkaHub, Excalidraw and Jetpack Ink were investigated but have not been integrated.
+External MCP is available under Settings → Agent connection · MCP. A same-device native client can connect to the Android loopback endpoint; tools read workspace files and handwritten page images, write files/Skills and publish a new learning page. Writes use durable operation receipts and version checks.
+
+WordTok-style fixed public URLs use a separately deployed HTTPS relay while Android executes tools. **No hosted WE public domain is bundled.** Deploy the dedicated relay first; do not reuse WordTok URLs or data. See [MCP setup](mcp/README.md). A cloud client cannot reach Android loopback directly.
+
+ Current generated papers are primarily text. Editable graphical scenes, arbitrary Python/Node Skill scripts, MCP OAuth, stdio and Google Drive sync are not supported. DSH Go, RikkaHub, Excalidraw and Jetpack Ink were investigated but have not been integrated.
 
 See [native agent implementation](docs/android-native-agent.md) and [verification boundaries](docs/research/continuous-learning.md).
 
@@ -62,7 +66,7 @@ Output: `app/build/outputs/apk/debug/app-debug.apk`.
   -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest
 ```
 
-Local validation passed 99 unit tests, lint and APK assembly, including task continuation, workspace indexing, data retention and UI entry checks. Synthetic model and callback tests do not establish real-account authorization, vision accuracy, system voice availability or physical stylus performance.
+Local validation passed the full unit test suite, lint and APK assembly, including task continuation, workspace indexing, data retention and UI entry checks. Synthetic model and callback tests do not establish real-account authorization, vision accuracy, system voice availability or physical stylus performance.
 
 ## Credits and license
 

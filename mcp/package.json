@@ -1,0 +1,1 @@
+{"name":"we-mcp-relay","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"start":"node relay.mjs","test":"node --test relay.test.mjs"}}

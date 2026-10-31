@@ -9,9 +9,12 @@ import org.json.JSONObject
 
 /** Local files are separate: immutable original, editable vectors, derived model result. */
 class PaperRepository(context: Context) : PaperStore {
+    // MCP reads on its own worker while the writing screen saves on PaperIo.
+    // AtomicFile.openRead must not restore a .bak while another instance writes.
+    private companion object { val lock = Any() }
     private val resolver = context.contentResolver
     private val root = File(context.filesDir, "papers").apply { mkdirs() }
-    override fun importPdf(uri: Uri): String {
+    override fun importPdf(uri: Uri): String = synchronized(lock) {
         val temp = File.createTempFile("import-", ".pdf", root)
         try {
             val digest = MessageDigest.getInstance("SHA-256"); var count = 0L
@@ -38,7 +41,7 @@ class PaperRepository(context: Context) : PaperStore {
         return File(root, id).apply { mkdirs() }
     }
     override fun pdf(id: String) = File(directory(id), "original.pdf")
-    override fun load(id: String, page: Int, width: Int, height: Int): PaperPage {
+    override fun load(id: String, page: Int, width: Int, height: Int): PaperPage = synchronized(lock) {
         val file = File(directory(id), "page-$page.ink.json")
         val atomic = AtomicFile(file)
         if (!file.exists() && !File(file.path + ".bak").exists()) return PaperPage(width, height, 0, emptyList())
@@ -53,11 +56,11 @@ class PaperRepository(context: Context) : PaperStore {
             .put("sourceVectors", "$snapshotName.ink.json").put("region", JSONObject(region)).put("answer", answer).put("createdAt", System.currentTimeMillis())
         write(File(directory(id), "result-${java.util.UUID.randomUUID()}.json"), result.toString())
     }
-    override fun results(id: String, page: Int): List<JSONObject> = directory(id).listFiles().orEmpty()
+    override fun results(id: String, page: Int): List<JSONObject> = synchronized(lock) { directory(id).listFiles().orEmpty()
         .filter { it.name.startsWith("result-") && it.name.endsWith(".json") }
         .map { AtomicFile(it).openRead().bufferedReader().use { reader -> JSONObject(reader.readText()) } }
-        .filter { it.getInt("page") == page }.sortedByDescending { it.getLong("createdAt") }.take(20)
-    private fun write(file: File, text: String) {
+        .filter { it.getInt("page") == page }.sortedByDescending { it.getLong("createdAt") }.take(20) }
+    private fun write(file: File, text: String) = synchronized(lock) {
         val atomic = AtomicFile(file); val out = atomic.startWrite()
         try { out.write(text.toByteArray(Charsets.UTF_8)); atomic.finishWrite(out) }
         catch (e: Exception) { atomic.failWrite(out); throw e }
