@@ -213,7 +213,7 @@ class MainActivity : Activity() {
     private fun showFirstRunGuide() {
         AlertDialog.Builder(this)
             .setTitle("欢迎使用 WE")
-            .setMessage("Write Everything\n\n直接手写、语音或打字开始。工作区保存任务，设置中可登录 ChatGPT 订阅或配置 API。")
+            .setMessage("Write Everything\n\n直接手写、绘画或打字开始。工作区保存任务，设置中可登录 ChatGPT 订阅或配置 API。")
             .setPositiveButton("去设置") { _, _ ->
                 prefs.edit().putBoolean("firstRunDone", true).apply()
                 showPanel(TAB_SETTINGS)
@@ -385,21 +385,13 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; homeInputs = inputs
         fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; setOnClickListener { action() } }) }
+        inputButton("手写") { android.widget.Toast.makeText(this, "直接在首页书写；生成的学习页也可直接落笔。", android.widget.Toast.LENGTH_SHORT).show() }
+        inputButton("绘画") { if (canSwitchTask()) openDrawingPage() }
         inputButton("打字") {
             if (canSwitchTask()) {
                 val editor = android.widget.EditText(this).apply { hint = "写下需求"; minLines = 2 }
                 AlertDialog.Builder(this).setTitle("输入").setView(editor).setNegativeButton("取消", null)
                     .setPositiveButton("发送") { _, _ -> submitText(editor.text.toString()) }.show()
-            }
-        }
-        inputButton("语音") {
-            if (canSwitchTask()) try {
-                startActivityForResult(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault().toLanguageTag())
-                }, 74)
-            } catch (e: android.content.ActivityNotFoundException) {
-                android.widget.Toast.makeText(this, "系统未安装语音输入服务，可用键盘语音输入。", android.widget.Toast.LENGTH_LONG).show()
             }
         }
         root.addView(inputs, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = px(10f); bottomMargin = px(8f) })
@@ -1392,7 +1384,7 @@ class MainActivity : Activity() {
                 text = when { workspaceSearch.isNotBlank() -> "没有匹配的工作区。"
                     workspaceScope == "trash" -> "回收站为空。移入的任务可在这里恢复。"
                     workspaceScope == "archived" -> "暂时不用的任务可归档，资料和笔迹仍会保留。"
-                    else -> "打开即可手写、语音或打字。任务会保存在这里，下次选择后继续。" }
+                    else -> "打开即可手写、绘画或打字。任务会保存在这里，下次选择后继续。" }
                 textSize = 14f; setTextColor(inkFaint)
             })
             val fmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
@@ -1522,19 +1514,30 @@ class MainActivity : Activity() {
             try {
                 val pdf = if (source.extension.lowercase() == "pdf") source else
                     File(workspace.root, "memory/pages/paper-${java.util.UUID.randomUUID()}.pdf").also { LearningPageRenderer.render(source, it, true) }
+                val drawing = LearningPageRenderer.pageMap(pdf, 0)?.optString("mode") == "drawing"
                 ui.post { startActivity(android.content.Intent(this, com.opc.baize.paper.PaperActivity::class.java)
-                    .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.path).putExtra("autoStudy", true)
+                    .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.path).putExtra("autoStudy", !drawing)
+                    .putExtra("entryMode", if (drawing) "drawing" else "handwriting")
                     .putExtra("sourcePath", if (source.extension.lowercase() == "pdf") LearningTurn.sourcePath(source) else "/" + source.relativeTo(workspace.root).path)) }
             } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this, e.message, android.widget.Toast.LENGTH_LONG).show() } }
+        }
+    }
+    private fun openDrawingPage() {
+        val session = Session(curSessionId, curSessionTs, curTurns.toList())
+        worker.execute {
+            try {
+                val workspace = WorkspaceFiles(this).forSession(session)
+                val page = org.json.JSONObject().put("we_page", 1).put("mode", "drawing")
+                    .put("blocks", org.json.JSONArray().put(org.json.JSONObject().put("id", "canvas").put("type", "drawing").put("height", 500).put("grid", "blank")))
+                val turn = LearningTurn.prepare(workspace, "自由绘画", origin = "绘画模式")
+                turn.publishExternal(page.toString()) { source, pdf -> LearningPageRenderer.render(source, pdf, true) }
+                ui.post { openWorkspaceFile(workspace, turn.pdf) }
+            } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this, "绘画页创建失败：${e.message}", android.widget.Toast.LENGTH_LONG).show() } }
         }
     }
     @Deprecated("Platform callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 74 && resultCode == RESULT_OK) {
-            data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { submitText(it) }
-            return
-        }
         if (requestCode != 73 || resultCode != RESULT_OK) return
         val id = pdfWorkspace ?: prefs.getString("pending_pdf_workspace", null) ?: return
         val workspace = WorkspaceFiles(this).list().find { it.id == id } ?: return
@@ -1572,7 +1575,7 @@ class MainActivity : Activity() {
         )
         para("WE · Write Everything", 20f, inkDark)
         para("版本：${com.opc.baize.BuildConfig.VERSION_NAME}")
-        para("写下需求，继续工作。手写、语音与打字从首页开始；工作区保存任务、资料和页面，供下次继续。")
+        para("写下需求，继续工作。手写、绘画与打字从首页开始；工作区保存任务、资料和页面，供下次继续。")
         para("项目维护：RT · RT-C-6668882025")
         para("协议：GPL-3.0")
         para("这是一款自由开源软件（GPL-3.0）。你可以自由使用、研究、修改与再分发，" +

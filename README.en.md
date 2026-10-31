@@ -2,15 +2,15 @@
 
 **Start writing. Return to your workspace and continue.**
 
-WE is an Android handwriting and AI workspace application, built on [Moling](https://github.com/xiaoxi668v-prog/moling). Use handwriting, system voice input or typing, and keep conversations, documents and learning pages within a task.
+WE is an Android handwriting and AI workspace application, built on [Moling](https://github.com/xiaoxi668v-prog/moling). Use handwriting, drawing or typing, and keep conversations, documents and learning pages within a task.
 
 [Downloads](https://github.com/RT-C-6668882025/WE/releases) · [Release notes](docs/releases/) · [Issues](https://github.com/RT-C-6668882025/WE/issues) · [中文](README.md)
 
-Current source version: **v0.4.5 Preview**. See Releases for APKs actually available on GitHub.
+Current source version: **v0.4.6 Preview**. See Releases for APKs actually available on GitHub.
 
 ## The interface
 
-- **Home:** write immediately, or use the typing and voice buttons. Voice requires an installed system recognition service.
+- **Home:** use handwriting, drawing or typing. Drawing does not trigger AI on pen pause by default; voice comes from your keyboard.
 - **Workspaces:** browse and resume previous tasks. Existing conversation archives are retained. Selecting a task restores its identity and recent conversation context.
 - **Workspace documents:** view files, import PDFs, open the latest learning paper, rename or delete the workspace.
 - **Settings:** configure models, subscription login, recognition, handwriting and appearance. Separate PDF and Skill/MCP workbench entries have been removed.
@@ -21,6 +21,9 @@ Tap the bottom-left icon to open the Workspaces / Settings / About panel.
 Workspaces support name search, pinned-first sorting, batch archive and recoverable Trash. Restoring a task retains its identity, materials and ink.
 
 ## Handwriting and learning papers
+
+MCP can publish structured, pen-ready pages with question/answer regions, annotation margins, drawing areas and reference figures. Generated content and editable ink share page coordinates. See [writable page protocol](docs/writable-pages.md).
+
 
 Home supports ML Kit Digital Ink recognition and the selected subscription vision model. PDF papers support handwriting, undo, pan, zoom, rectangular selection, recognition, grading and explanations. Ink is stored separately from the original PDF; submissions record the source page, revision and region.
 
@@ -68,7 +71,7 @@ Output: `app/build/outputs/apk/debug/app-debug.apk`.
   -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest
 ```
 
-Local validation passed the full unit test suite, lint and APK assembly, including task continuation, workspace indexing, data retention and UI entry checks. Synthetic model and callback tests do not establish real-account authorization, vision accuracy, system voice availability or physical stylus performance.
+Local validation passed the full unit test suite, lint and APK assembly, including task continuation, workspace indexing, data retention and UI entry checks. Synthetic model and callback tests do not establish real-account authorization, vision accuracy, keyboard input or physical stylus performance.
 
 ## Credits and license
 

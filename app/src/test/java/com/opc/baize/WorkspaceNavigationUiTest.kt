@@ -41,7 +41,7 @@ class WorkspaceNavigationUiTest {
             assertTrue(about.contains("Moling")); assertTrue(about.contains("GPL-3.0"))
             assertFalse(about.contains("墨灵 1.0"))
             val home = text(activity.window.decorView)
-            assertTrue(home.contains("打字")); assertTrue(home.contains("语音"))
+            assertTrue(home.contains("打字")); assertTrue(home.contains("手写")); assertTrue(home.contains("绘画")); assertFalse(home.contains("语音"))
         } finally { controller.destroy() }
     }
     @Test fun selectingAndContinuingAnOldTaskAppendsToItsOriginalArchive() {

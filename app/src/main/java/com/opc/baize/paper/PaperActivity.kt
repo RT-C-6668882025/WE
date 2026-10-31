@@ -80,8 +80,17 @@ class PaperActivity : Activity() {
         button(tools, "移动") { ink.mode = PaperInkView.Mode.MOVE; status.text = "拖动页面；± 调整缩放" }
         button(tools, "选区") { ink.mode = PaperInkView.Mode.SELECT; status.text = "拖出矩形区域，再手动提交" }
         button(tools, "撤销") { if (!loading) ink.undo() }
+        button(tools, "擦除") { ink.mode = PaperInkView.Mode.ERASE; status.text = "擦除笔迹；生成内容保留，可撤销。" }
         button(tools, "−") { ink.zoom(0.8f) }; button(tools, "+") { ink.zoom(1.25f) }
         ink = PaperInkView(this)
+        val pens = row().apply { visibility = android.view.View.GONE }; extraTools += pens
+        button(pens, "笔迹颜色") {
+            val colors = intArrayOf(Color.BLACK, Color.rgb(25, 85, 175), Color.rgb(190, 40, 40), Color.rgb(35, 125, 75))
+            AlertDialog.Builder(this).setTitle("笔迹颜色").setItems(arrayOf("黑", "蓝", "红", "绿")) { _, index -> ink.penColor = colors[index]; ink.mode = PaperInkView.Mode.WRITE }.show()
+        }
+        button(pens, "笔触粗细") {
+            AlertDialog.Builder(this).setTitle("笔触粗细").setItems(arrayOf("细", "标准", "粗", "画笔")) { _, index -> ink.penWidth = floatArrayOf(1.2f, 1.8f, 3f, 5f)[index]; ink.mode = PaperInkView.Mode.WRITE }.show()
+        }
         root.addView(ink, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         ink.changed = { data ->
             handler.removeCallbacks(recognizeLater)
@@ -140,6 +149,7 @@ class PaperActivity : Activity() {
         }
         status = TextView(this).apply { text = "可离线书写；自动继续开启时，停笔后使用订阅理解并生成页面。"; textSize = 14f }; root.addView(status)
         val generated = intent.getStringExtra("generatedPdf")
+        if (intent.getStringExtra("entryMode") == "drawing") { toolsVisible = true; extraTools.forEach { it.visibility = android.view.View.VISIBLE } }
         workspaceId = intent.getStringExtra("workspace")
         autoStudy = intent.getBooleanExtra("autoStudy", false)
         if (generated != null && workspaceId != null) {

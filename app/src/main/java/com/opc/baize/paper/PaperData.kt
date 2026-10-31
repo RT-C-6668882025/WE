@@ -5,11 +5,11 @@ import org.json.JSONObject
 
 /** Rendered PDF page space in points, independent of view pixels, zoom and pan. */
 data class InkPoint(val x: Float, val y: Float, val pressure: Float, val time: Long)
-data class PaperStroke(val points: List<InkPoint>, val width: Float = 1.8f)
+data class PaperStroke(val points: List<InkPoint>, val width: Float = 1.8f, val color: Int = -16777216)
 data class PaperPage(val width: Int, val height: Int, val revision: Long, val strokes: List<PaperStroke>) {
     fun encode(): String = JSONObject().put("schema", 1).put("space", "android-pdf-renderer-page-points")
         .put("width", width).put("height", height).put("revision", revision).put("strokes", JSONArray().apply {
-            strokes.forEach { stroke -> put(JSONObject().put("width", stroke.width).put("points", JSONArray().apply {
+            strokes.forEach { stroke -> put(JSONObject().put("width", stroke.width).put("color", stroke.color).put("points", JSONArray().apply {
                 stroke.points.forEach { put(JSONArray(listOf(it.x, it.y, it.pressure, it.time))) }
             })) }
         }).toString()
@@ -30,7 +30,7 @@ data class PaperPage(val width: Int, val height: Int, val revision: Long, val st
                     val x = p.getDouble(0).toFloat(); val y = p.getDouble(1).toFloat(); val pressure = p.getDouble(2).toFloat()
                     require(x.isFinite() && y.isFinite() && pressure.isFinite() && x in 0f..width.toFloat() && y in 0f..height.toFloat())
                     InkPoint(x, y, pressure, p.getLong(3))
-                }, penWidth)
+                }, penWidth, stroke.optInt("color", -16777216))
             })
         }
     }

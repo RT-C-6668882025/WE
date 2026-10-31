@@ -17,7 +17,7 @@ Android 前台服务在切后台后继续连接，通知栏可停止；进程回
 - `list_workspaces` / `create_workspace` / `rename_workspace` / `manage_workspace`：支持名称与归档筛选、置顶和归档；回收站操作只在应用内进行。
 - `list_files` / `read_file` / `write_file`：只访问当前工作区 `memory/` 与 `.agents/skills/`；文本不超过 256 KB。现有文件写入需匹配 `expected_sha256`，学习页与会话快照不允许覆盖。
 - `read_page`：读取工作区 PDF 的指定页、已保存的笔迹向量和反馈，同时返回 PDF+笔迹的 MCP 图像，由外部 Agent 使用视觉能力理解。不会上传尚未落盘的当前笔画。
-- `publish_learning_page`：传入 request 和 content，生成有手写留白的新 PDF；原页和笔迹保留。打开工作区“资料 → 最近学习页”，或在学习纸上点“查看生成页”继续。
+- `publish_learning_page`：传入 request 及结构化 page（或旧 content），生成可直接落笔的新 PDF。page 支持题目与答题留白、绘图区、参考图和批注边距，协议见 ../docs/writable-pages.md。read_page 同时返回内容块坐标，关联笔迹与原题。；原页和笔迹保留。打开工作区“资料 → 最近学习页”，或在学习纸上点“查看生成页”继续。
 - `get_operation_result`：查询保存回执。
 
 建议流程：列出工作区 → 读取原资料及带手写的页面图像 → 理解反馈 → 发布新页 → 用户继续书写 → 再读取页面。模型、Skill 解释和推理由连接的 Agent 完成，不再要求用户手动串接多个接口。Skill 文件以数据方式写入，MCP 不执行任意 shell、脚本或访问订阅凭据。

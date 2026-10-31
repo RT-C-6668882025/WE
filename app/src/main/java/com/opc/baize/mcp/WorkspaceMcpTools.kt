@@ -40,6 +40,7 @@ class WorkspaceMcpTools(private val context: Context,
             val value = args.get(key)
             if ((type == "string" && value !is String) || (type == "integer" && value !is Int && value !is Long))
                 return@synchronized failure("Invalid argument type: $key")
+            if (type == "object" && value !is JSONObject) return@synchronized failure("Invalid object: $key")
         }
         if (name == "get_operation_result") return@synchronized receipt(args.getString("request_id"))
         val mutation = !definition.getJSONObject("annotations").getBoolean("readOnlyHint")
@@ -131,13 +132,18 @@ class WorkspaceMcpTools(private val context: Context,
             LearningTurn.write(f, text); JSONObject().put("path", a.getString("path")).put("sha256", sha(text.toByteArray()))
         }
         "publish_learning_page" -> {
-            val w = workspace(a); val text = a.getString("content")
+            require(a.has("content") != a.has("page")) { "Provide either page or content" }
+            val w = workspace(a)
+            val text = if (a.has("page")) a.getJSONObject("page").let {
+                WritableDocument.parse(it); JSONObject(it.toString()).put("we_page", 1).toString()
+            } else a.getString("content")
             require(text.isNotBlank() && text.toByteArray().size <= 128000) { "Page text limit 128 KB" }
             val source = a.optString("source_path").takeIf { it.isNotBlank() }
             if (source != null) file(w, source)
             val turn = LearningTurn.prepare(w, a.getString("request"), source, "外部 MCP Agent")
             turn.publishExternal(text, render)
             JSONObject().put("path", "/memory/pages/${turn.pdf.name}").put("source_path", "/memory/pages/${turn.source.name}")
+                .put("layout_path", "/memory/pages/${turn.pdf.nameWithoutExtension}.layout.json")
         }
         "read_page" -> readPage(workspace(a), a)
         else -> error("Unsupported tool")
@@ -156,11 +162,13 @@ class WorkspaceMcpTools(private val context: Context,
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; strokeWidth = 2.5f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
                 for (stroke in ink.strokes) {
                     paint.strokeWidth = stroke.width
+                    paint.color = stroke.color
                     val path = Path(); stroke.points.forEachIndexed { i, p -> if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y) }; canvas.drawPath(path, paint)
                 }
                 val bytes = java.io.ByteArrayOutputStream(); rendered.bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bytes)
                 require(bytes.size() <= 450000) { "Image too large" }
                 val data = JSONObject().put("document_id", id).put("page_count", engine.pageCount).put("page", page)
+                    .put("layout", LearningPageRenderer.pageMap(pdf, page) ?: JSONObject.NULL)
                     .put("ink", JSONObject(ink.encode())).put("feedback", JSONArray(repository.results(id, page)))
                     .put("content", JSONArray().put(JSONObject().put("type", "image").put("mimeType", "image/jpeg").put("data", Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP))))
                 require(data.toString().toByteArray().size <= 900000) { "Page feedback too large; use a smaller document" }

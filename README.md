@@ -2,18 +2,18 @@
 
 **打开就能写，回到工作区继续。**
 
-WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Moling](https://github.com/xiaoxi668v-prog/moling) 改造。用手写、语音或打字表达需求，在同一个工作区保存对话、资料与学习页面。
+WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Moling](https://github.com/xiaoxi668v-prog/moling) 改造。用手写、绘画或打字表达需求，在同一个工作区保存对话、资料与学习页面。
 
 [下载安装包](https://github.com/RT-C-6668882025/WE/releases) · [版本记录](docs/releases/) · [反馈问题](https://github.com/RT-C-6668882025/WE/issues) · [English](README.en.md)
 
-当前源码版本：**v0.4.5 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
+当前源码版本：**v0.4.6 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
 
 ## 怎么使用
 
 ### 首页：直接开始
 
-- 直接手写，停笔后识别并回答；也可以点击“打字”或“语音”。
-- 语音使用设备的系统识别服务；未安装相应服务时，可使用键盘语音输入。
+- 首页分为手写、绘画、打字三种入口。绘画默认不触发停笔 AI。
+- 独立语音入口已取消，语音使用输入法自带能力。
 - 点击左下角图标，打开“工作区 / 设置 / 关于”面板。
 
 ### 工作区：查看历史，继续任务
@@ -35,6 +35,9 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 “关于”展示 WE 项目信息、许可及上游和第三方致谢。
 
 ## 手写与学习页面
+
+MCP 优先生成可直接落笔的内容：题目配答题留白，正文旁留批注边距，图形与绘图区保留笔写空间。生成后可直接在内容上作答、圈画；read_page 同时返回笔迹、页面图像与区域坐标。见 [可书写页面协议](docs/writable-pages.md)。
+
 
 - 首页支持本机 ML Kit Digital Ink 识别，也可使用选定的订阅视觉模型。
 - PDF 学习页支持书写、撤销、移动、缩放、矩形选区、整页或选区识别、批改与解释。
@@ -86,7 +89,7 @@ Android 仪器测试：
   -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest,com.opc.baize.mcp.McpDeviceTest
 ```
 
-当前本地验证已通过 完整单元测试、Lint 和 APK 构建，包含旧任务续接、工作区索引、资料保留及界面入口检查。模拟模型和本机回调测试不替代真实订阅授权、识图准确率、语音服务或平板笔感验证。
+当前本地验证已通过 完整单元测试、Lint 和 APK 构建，包含旧任务续接、工作区索引、资料保留及界面入口检查。模拟模型和本机回调测试不替代真实订阅授权、识图准确率、输入法或平板笔感验证。
 
 ## 项目与致谢
 

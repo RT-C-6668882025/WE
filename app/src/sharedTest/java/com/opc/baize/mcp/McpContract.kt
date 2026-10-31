@@ -60,7 +60,10 @@ object McpContract {
             val external = File(workspace.container, "private.txt").apply { writeText("PRIVATE") }
             java.nio.file.Files.createSymbolicLink(File(workspace.root, "memory/leak.txt").toPath(), external.toPath())
             assertEquals("failed", result("read_file", args("workspace_id" to id, "path" to "/memory/leak.txt")).getString("status"))
-            val publish = args("workspace_id" to id, "content" to "FIRST_LESSON\nHe ___ yesterday.\n请作答", "request" to "练习时态", "operation_id" to "$prefix-page")
+            val spec = JSONObject().put("title", "FIRST_LESSON").put("blocks", JSONArray()
+                .put(args("id" to "q1", "type" to "question", "text" to "He ___ yesterday.", "answer_lines" to 3))
+                .put(args("id" to "canvas", "type" to "drawing", "height" to 180, "grid" to "dots")))
+            val publish = args("workspace_id" to id, "page" to spec, "request" to "练习时态", "operation_id" to "$prefix-page")
             val page = result("publish_learning_page", publish).getJSONObject("result")
             val pdf = LearningTurn.latestReady(workspace)!!
             val original = pdf.readBytes()
@@ -73,6 +76,11 @@ object McpContract {
                 assertFalse(response.getBoolean("isError"))
                 assertEquals("image", response.getJSONArray("content").getJSONObject(1).getString("type"))
                 assertEquals(1L, response.getJSONObject("structuredContent").getJSONObject("result").getJSONObject("ink").getLong("revision"))
+                val layout = response.getJSONObject("structuredContent").getJSONObject("result").getJSONObject("layout")
+                assertEquals(600, layout.getInt("width")); assertEquals(840, layout.getInt("height"))
+                val regions = layout.getJSONArray("regions")
+                val answer = (0 until regions.length()).map { regions.getJSONObject(it) }.first { it.getString("id") == "q1-answer" }
+                assertEquals("q1", answer.getString("parent_id")); assertTrue(answer.getInt("height") >= 108)
             }
             val next = result("publish_learning_page", args("workspace_id" to id, "content" to "SECOND_LESSON\nwent is the past tense of go.",
                 "request" to "根据手写答案继续", "source_path" to page.getString("source_path"), "operation_id" to "$prefix-next"))
