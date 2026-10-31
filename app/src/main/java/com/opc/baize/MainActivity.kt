@@ -17,6 +17,10 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.opc.baize.agent.WorkspaceFiles
+import com.opc.baize.agent.WeWorkspace
+import com.opc.baize.agent.LearningTurn
+import com.opc.baize.agent.LearningPageRenderer
 import com.opc.baize.core.CnNumber
 import com.opc.baize.core.ModelConfig
 import com.opc.baize.core.NewCommand
@@ -66,6 +70,7 @@ class MainActivity : Activity() {
 
     /** 终极直写书写层（华为 HWEditView 反射封装）。null=不可用/关闭，走 InkView 老路。 */
     private var hwLayer: HwHandwritingLayer? = null
+    private lateinit var homeInputs: LinearLayout
     private lateinit var rootLayout: FrameLayout
     private fun hwActive(): Boolean = hwLayer != null
 
@@ -79,17 +84,11 @@ class MainActivity : Activity() {
     private val fallback = FallbackClient()
     private lateinit var recognizer: MlKitRecognizer
 
-    // ---------- 会话历史（开源版：像对话软件按会话分条） ----------
-    // BookView 仍以“连续书页”渲染当前对话（观感不变）；这里额外维护一份按会话分条的历史：
-    // 每次 /new 或首次开始 = 新会话，一轮问答 record 到 curTurns，随即整表落盘 sessions.json。
-    // 回看历史某条 = 只读把该会话铺进书页；用户在回看态继续书写则自动开一个新会话
-    // （先清书页再落新问答，新旧会话不混页，见 runRound/fallbackRound 的 viewingHistory 分支）。
+    // 首页输入与工作区共用同一任务；历史会话保留并建立工作区索引。
     private val allSessions = mutableListOf<Session>()
     private val curTurns = mutableListOf<Turn>()
     private var curSessionId: String = newSessionId()
     private var curSessionTs: Long = System.currentTimeMillis()
-    /** true=当前处于“回看历史”只读态，落笔提交时先另起新会话。 */
-    private var viewingHistory = false
     /** 回看态下正在展示的历史会话 id（删除该条历史时据此连书页一起清）。 */
     private var viewingSessionId: String? = null
 
@@ -163,7 +162,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         store = PageStore(File(filesDir, "pages.json"))
         sessionStore = SessionStore(File(filesDir, "sessions.json"), File(filesDir, "pages.json"))
-        allSessions.addAll(sessionStore.load())   // 读历史（含旧 pages.json 迁移），失败=空
+        allSessions.addAll(sessionStore.load())
+        val workspaceFiles = WorkspaceFiles(this)
+        allSessions.forEach { workspaceFiles.forSession(it) }
+        val savedSession = prefs.getString("active_workspace_session", null)
+        (allSessions.find { it.id == savedSession } ?: workspaceFiles.list().firstOrNull { workspaceFiles.sessionId(it) == savedSession }?.let {
+            Session(savedSession!!, it.container.lastModified(), emptyList())
+        })?.let { resumeSessionState(it) }
         buildUi()
         applyImmersive()
         applyFontToBook()   // 套用用户字体偏好（首次为默认龙藏/38dp）
@@ -206,8 +211,8 @@ class MainActivity : Activity() {
     /** 首次打开引导：填过 API（或点“稍后”）即置 firstRunDone，之后不再弹。 */
     private fun showFirstRunGuide() {
         AlertDialog.Builder(this)
-            .setTitle("欢迎使用墨灵")
-            .setMessage("墨灵是一枚栖于墨水屏中的墨中之灵。\n\n请先在设置中登录 ChatGPT 订阅或配置原 API，方能应答手写之问。")
+            .setTitle("欢迎使用 WE")
+            .setMessage("Write Everything\n\n直接手写、语音或打字开始。工作区保存任务，设置中可登录 ChatGPT 订阅或配置 API。")
             .setPositiveButton("去设置") { _, _ ->
                 prefs.edit().putBoolean("firstRunDone", true).apply()
                 showPanel(TAB_SETTINGS)
@@ -293,7 +298,7 @@ class MainActivity : Activity() {
             setPadding(px(22f), px(14f), px(22f), px(8f))
         }
         val title = TextView(this).apply {
-            text = "墨 灵"
+            text = "WE"
             textSize = 24f
             letterSpacing = 0.5f
             setTextColor(0xFF3A352C.toInt())
@@ -352,15 +357,15 @@ class MainActivity : Activity() {
         seal = ImageView(this).apply {
             setImageResource(R.drawable.ic_seal)
             alpha = 0.9f
-            contentDescription = "墨灵 · 印章（点击打开设置）"
+            contentDescription = "WE · 工作区、设置与关于"
         }
         val sealDetector = android.view.GestureDetector(
             this,
             object : android.view.GestureDetector.SimpleOnGestureListener() {
-                // 单击（抬手即触发，不再等双击判定）→ 打开面板，先落在【历史】页
-                // （老板 2026-07-08：印章进历史，再从 tab 切设置）
+                // 单击（抬手即触发，不再等双击判定）→ 打开面板，先落在【工作区】页
+                // （老板 2026-07-08：印章进工作区，再从 tab 切设置）
                 override fun onSingleTapUp(e: android.view.MotionEvent): Boolean {
-                    showPanel(TAB_HISTORY)
+                    showPanel(TAB_WORKSPACES)
                     return true
                 }
                 override fun onDown(e: android.view.MotionEvent): Boolean = true
@@ -377,6 +382,26 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         root.addView(ink, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; homeInputs = inputs
+        fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; setOnClickListener { action() } }) }
+        inputButton("打字") {
+            if (canSwitchTask()) {
+                val editor = android.widget.EditText(this).apply { hint = "写下需求"; minLines = 2 }
+                AlertDialog.Builder(this).setTitle("输入").setView(editor).setNegativeButton("取消", null)
+                    .setPositiveButton("发送") { _, _ -> submitText(editor.text.toString()) }.show()
+            }
+        }
+        inputButton("语音") {
+            if (canSwitchTask()) try {
+                startActivityForResult(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault().toLanguageTag())
+                }, 74)
+            } catch (e: android.content.ActivityNotFoundException) {
+                android.widget.Toast.makeText(this, "系统未安装语音输入服务，可用键盘语音输入。", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+        root.addView(inputs, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = px(10f); bottomMargin = px(8f) })
         root.addView(seal, sealLp)
         setContentView(root)
 
@@ -472,6 +497,7 @@ class MainActivity : Activity() {
         // 关键 bug 修复（老板 2026-07-08"印章点了没反应"）：直写容器盖在印章之上、吃掉了
         // 落在印章上的触摸。把印章提回最顶层，单击才能命中。
         seal.bringToFront()
+        homeInputs.bringToFront()
     }
 
     // ---------- 印章闪烁（仅在 API 未配置、需提示用户去设置时，闪两下即停） ----------
@@ -507,7 +533,7 @@ class MainActivity : Activity() {
         const val POLL_MS = 150L
 
         // 半屏面板 tab 序号
-        const val TAB_HISTORY = 0
+        const val TAB_WORKSPACES = 0
         const val TAB_SETTINGS = 1
         const val TAB_ABOUT = 2
 
@@ -691,6 +717,19 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun submitText(value: String) {
+        val text = value.trim()
+        if (text.isEmpty() || !canSwitchTask()) return
+        cancelIdleTimer(); clearWritingSurface()
+        if (hwActive()) { idleDetector.reset(); pollWasGrowing = false }
+        setStatus("thinking")
+        worker.execute {
+            try { answerInput(text) }
+            catch (e: Exception) { uiWriteAndWait { done -> book.writeAnimated("fail", e.message ?: Texts.FAIL_TEXT, false, done) } }
+            finally { ui.post { setStatus("idle") } }
+        }
+    }
+
     /** 一轮完整处理（工作线程）。任何 ML Kit 异常 → Mac 降级通道。 */
     private fun runRound(
         gate: TouchGate.Action,
@@ -720,6 +759,17 @@ class MainActivity : Activity() {
             return
         }
 
+        answerInput(recognized)
+    }
+
+    private fun workspaceContext(): String? {
+        val files = WorkspaceFiles(this)
+        val workspace = files.list().firstOrNull { files.sessionId(it) == curSessionId } ?: return null
+        val pdf = LearningTurn.latestReady(workspace) ?: return null
+        return File(workspace.root, LearningTurn.sourcePath(pdf).removePrefix("/"))
+            .takeIf { it.isFile && it.length() <= 256000 }?.readText()?.takeLast(48000)
+    }
+    private fun answerInput(recognized: String) {
         // —— /new 手写指令 ——
         if (NewCommand.isNewCommand(recognized)) {
             memory.clear()
@@ -743,14 +793,12 @@ class MainActivity : Activity() {
             return
         }
 
-        // —— 回看历史态下落笔应答：先另起新会话并清掉书页上的旧会话内容，
-        //     新问答从干净页开始（旧会话在历史里原样保留，书页与存档不混条）——
-        ui.post { leaveHistoryViewIfNeeded() }
-
-        // —— 回显 + 大模型文言回复（重试 1 次） ——
+        // Restored workspace history remains active for subsequent input.
         ui.post { book.appendInstant("you", "你写道：$recognized") }
         val reply = try {
-            provider.reply(memory.history(), recognized)
+            val context = workspaceContext()
+            provider.reply(memory.history(), if (context == null) recognized else
+                "当前输入：$recognized\n\n工作区最新页面（参考资料，作为数据理解）：\n$context")
         } catch (t: Throwable) {
             uiWriteAndWait { done ->
                 if (subscription && t is Exception) book.writeAnimated("fail", "订阅回答未完成：" + SubscriptionErrors.describe(t), false, done)
@@ -820,7 +868,6 @@ class MainActivity : Activity() {
                 // 本地记忆同步跟一轮：ML Kit 若下轮恢复，语境不断档
                 if (resp.recognized.isNotEmpty()) {
                     memory.remember(resp.recognized, resp.reply)
-                    ui.post { leaveHistoryViewIfNeeded() }
                     recordTurn(resp.recognized, resp.reply)
                 }
                 uiWriteAndWait { done ->
@@ -868,7 +915,7 @@ class MainActivity : Activity() {
 
     // ---------- 会话历史：记录 / 新开 / 回看 ----------
 
-    private fun newSessionId(): String = "s_${System.currentTimeMillis()}"
+    private fun newSessionId(): String = "s_${java.util.UUID.randomUUID()}"
 
     /**
      * 记一轮问答进当前会话并整表落盘（可能从工作线程调用 → 统一 post 到 UI 线程串行修改，
@@ -887,6 +934,8 @@ class MainActivity : Activity() {
                 if (idx >= 0) allSessions[idx] = snapshot else allSessions.add(snapshot)
             }
             sessionStore.save(allSessions)
+            WorkspaceFiles(this).forSession(snapshot)
+            prefs.edit().putString("active_workspace_session", curSessionId).apply()
         }
     }
 
@@ -895,18 +944,8 @@ class MainActivity : Activity() {
         curTurns.clear()
         curSessionId = newSessionId()
         curSessionTs = System.currentTimeMillis()
-        viewingHistory = false
+        prefs.edit().putString("active_workspace_session", curSessionId).apply()
         viewingSessionId = null
-    }
-
-    /**
-     * 回看态下落笔应答的前置（UI 线程）：另起新会话并把书页清成空白页，
-     * 旧会话内容不混进新会话的书页与 pages.json 存档。非回看态无操作。
-     */
-    private fun leaveHistoryViewIfNeeded() {
-        if (!viewingHistory) return
-        startNewSession()
-        book.clearAllPages()
     }
 
     /**
@@ -928,17 +967,20 @@ class MainActivity : Activity() {
         }
     }
 
-    /**
-     * 回看某历史会话（只读铺进书页）。回看态下继续书写 → runRound 里检测 viewingHistory
-     * 先 startNewSession + 清书页，新问答记入新会话，旧会话保持不变（策略简单一致）。
-     */
+    private fun resumeSessionState(s: Session) {
+        curSessionId = s.id; curSessionTs = s.createdAt
+        curTurns.clear(); curTurns.addAll(s.turns)
+        memory.clear(); s.turns.forEach { memory.remember(it.question, it.reply) }
+        prefs.edit().putString("active_workspace_session", s.id).apply()
+    }
+
+    /** Selecting a task restores its identity AND model context, so the next input continues it. */
     private fun openHistorySession(s: Session) {
         cancelIdleTimer()
         refresh.exitWriting()
         clearWritingSurface()
         if (hwActive()) { idleDetector.reset(); pollWasGrowing = false }
-        memory.clear()
-        viewingHistory = true
+        resumeSessionState(s)
         viewingSessionId = s.id
         // Turn 列表铺成书页：you=问、book=答（复用 BookView.loadFromStore 的页结构）
         val pages = mutableListOf<List<Pair<String, String>>>()
@@ -948,7 +990,11 @@ class MainActivity : Activity() {
             if (t.reply.isNotEmpty()) blocks.add("book" to t.reply)
             if (blocks.isNotEmpty()) pages.add(blocks)
         }
-        if (pages.isEmpty()) book.resetBook(Texts.INTRO_TEXT)
+        if (pages.isEmpty()) {
+            val context = workspaceContext()
+            if (context.isNullOrBlank()) book.resetBook(Texts.INTRO_TEXT)
+            else book.loadFromStore(listOf(listOf("book" to context)))
+        }
         else book.loadFromStore(pages)
         setStatus("idle")
         store.save(book.snapshotForStore())   // 让重启也停在回看内容上
@@ -956,7 +1002,7 @@ class MainActivity : Activity() {
 
     // ================= 半屏面板（印章双击 / 长按右上角触发） =================
     // 墨水屏友好：无花哨动画、暖纸底、高对比。用一个底部对齐的 Dialog 承载半屏内容，
-    // 顶部三分段 tab【历史】【设置】【关于】切换。避免引入 Material 依赖，纯代码搭。
+    // 顶部三分段 tab【工作区】【设置】【关于】切换。避免引入 Material 依赖，纯代码搭。
 
     /** 当前打开的面板 Dialog（重开先关旧的，避免叠加）。 */
     private var panelDialog: AlertDialog? = null
@@ -971,7 +1017,7 @@ class MainActivity : Activity() {
 
     /**
      * 弹出半屏面板并切到指定 tab。半屏 = 屏高 62%，底部对齐（BottomSheet 观感）。
-     * @param tab 见 TAB_HISTORY / TAB_SETTINGS / TAB_ABOUT
+     * @param tab 见 TAB_WORKSPACES / TAB_SETTINGS / TAB_ABOUT
      */
     @SuppressLint("SetTextI18n")
     private fun showPanel(tab: Int) {
@@ -1006,11 +1052,11 @@ class MainActivity : Activity() {
             body.addView(when (t) {
                 TAB_SETTINGS -> buildSettingsPane()
                 TAB_ABOUT -> buildAboutPane()
-                else -> buildHistoryPane()
+                else -> buildWorkspacePane()
             })
         }
 
-        val labels = arrayOf("历史", "设置", "关于")
+        val labels = arrayOf("工作区", "设置", "关于")
         for (i in labels.indices) {
             val tv = TextView(this).apply {
                 text = labels[i]
@@ -1156,14 +1202,6 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
-        col.addView(android.widget.Button(this).apply {
-            text = "PDF 练习工作区"
-            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, com.opc.baize.paper.PaperActivity::class.java)) }
-        })
-        col.addView(android.widget.Button(this).apply {
-            text = "WE 工作区 · Skill / MCP"
-            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, com.opc.baize.agent.AgentWorkspaceActivity::class.java)) }
-        })
         col.addView(sectionTitle("模型通道"))
         val providerChoices = android.widget.Spinner(this).apply {
             adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
@@ -1269,105 +1307,140 @@ class MainActivity : Activity() {
         return scrollPane(col)
     }
 
-    // ---------- 面板【历史】 ----------
+    // ---------- 面板【工作区】 ----------
 
     @SuppressLint("SetTextI18n")
-    private fun buildHistoryPane(): View {
+    private fun buildWorkspacePane(): View {
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pxOf(22f), pxOf(16f), pxOf(22f), pxOf(24f))
         }
-        // “新对话”入口（= /new 效果；清场口径与 doClearAll 一致，书写层残墨一并清掉，
-        // 否则面板打开前写了一半的墨会被轮询当成新输入提交进刚开的会话）
-        val newBtn = android.widget.Button(this).apply {
-            text = "＋ 新对话"
+        val files = WorkspaceFiles(this)
+        allSessions.forEach { files.forSession(it) }
+        col.addView(android.widget.Button(this).apply {
+            text = "＋ 新工作区"
             setOnClickListener {
-                cancelIdleTimer()
-                clearWritingSurface()
+                if (!canSwitchTask()) return@setOnClickListener
+                cancelIdleTimer(); clearWritingSurface()
                 if (hwActive()) { idleDetector.reset(); pollWasGrowing = false }
-                startNewSession()
-                memory.clear()
-                store.clear()
-                book.resetBook(Texts.INTRO_TEXT)
-                setStatus("idle")
-                panelDialog?.dismiss()
+                startNewSession(); memory.clear(); store.clear()
+                files.forSession(Session(curSessionId, curSessionTs, emptyList()))
+                book.resetBook(Texts.INTRO_TEXT); setStatus("idle"); panelDialog?.dismiss()
             }
-        }
-        col.addView(newBtn, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        col.addView(View(this).apply { setBackgroundColor(hairline) },
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
-                topMargin = pxOf(12f)
-            })
-
-        val sessions = allSessions.filter { !it.isEmpty() }.sortedByDescending { it.createdAt }
-        if (sessions.isEmpty()) {
-            col.addView(TextView(this).apply {
-                text = "\n尚无历史对话。\n手写提问，墨灵作答后即成一条记录。"
-                textSize = 14f; setTextColor(inkFaint); gravity = Gravity.CENTER
-            })
-            return scrollPane(col)
-        }
-
-        val fmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
-        for (s in sessions) {
-            // 每条 = 水平行：左侧信息区（点击回看，占满余宽）+ 右侧"删"字（点击确认后删除）
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            val info = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(pxOf(4f), pxOf(12f), pxOf(4f), pxOf(12f))
-                isClickable = true
+        })
+        val workspaces = files.list().sortedByDescending { it.container.lastModified() }
+        if (workspaces.isEmpty()) col.addView(TextView(this).apply {
+            text = "打开即可手写、语音或打字。任务会保存在这里，下次选择后继续。"
+            textSize = 14f; setTextColor(inkFaint)
+        })
+        for (workspace in workspaces) {
+            val session = allSessions.find { it.id == files.sessionId(workspace) }
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            row.addView(TextView(this).apply {
+                text = workspace.name + if (session?.id == curSessionId) " · 当前" else ""
+                textSize = 17f; setTextColor(inkDark); setPadding(0, pxOf(16f), 0, pxOf(16f))
                 setOnClickListener {
-                    openHistorySession(s)
-                    panelDialog?.dismiss()
+                    if (!canSwitchTask()) return@setOnClickListener
+                    val target = session ?: Session(files.sessionId(workspace) ?: "w_${workspace.id}", System.currentTimeMillis(), emptyList())
+                    files.attachSession(workspace, target.id)
+                    openHistorySession(target); panelDialog?.dismiss()
                 }
-            }
-            info.addView(TextView(this).apply {
-                text = s.summary()
-                textSize = 16f; setTextColor(inkDark); maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(android.widget.Button(this).apply {
+                text = "资料"
+                setOnClickListener { if (canSwitchTask()) showWorkspaceActions(workspace) }
             })
-            info.addView(TextView(this).apply {
-                text = "${fmt.format(java.util.Date(s.createdAt))} · ${s.turns.size} 轮"
-                textSize = 12f; setTextColor(inkFaint)
-            })
-            row.addView(info, LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
-            val divider = View(this).apply { setBackgroundColor(hairline) }
-            val delBtn = TextView(this).apply {
-                text = "删"
-                textSize = 15f
-                setTextColor(inkGray)
-                gravity = Gravity.CENTER
-                // 大按压区（墨水屏上手指/笔都好点中），视觉只是一个"删"字
-                setPadding(pxOf(18f), pxOf(14f), pxOf(10f), pxOf(14f))
-                contentDescription = "删除此对话"
-                setOnClickListener {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle("删除此对话？")
-                        .setMessage("「${s.summary()}」\n共 ${s.turns.size} 轮，删除后不可恢复。")
-                        .setPositiveButton("删除") { _, _ ->
-                            deleteSession(s)
-                            // 就地从面板列表里摘掉这一行（无需整页重建）
-                            col.removeView(row)
-                            col.removeView(divider)
-                        }
-                        .setNegativeButton("取消", null)
-                        .show()
-                }
-            }
-            row.addView(delBtn, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
             col.addView(row)
-            col.addView(divider,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
+            col.addView(View(this).apply { setBackgroundColor(hairline) }, LinearLayout.LayoutParams(-1, 1))
         }
         return scrollPane(col)
+    }
+    private fun canSwitchTask(): Boolean {
+        if (statusState != "thinking") return true
+        android.widget.Toast.makeText(this, "当前任务正在执行，请完成后切换。", android.widget.Toast.LENGTH_SHORT).show()
+        return false
+    }
+    private var pdfWorkspace: String? = null
+    private fun showWorkspaceActions(workspace: WeWorkspace) {
+        AlertDialog.Builder(this).setTitle(workspace.name)
+            .setItems(arrayOf("打开最近学习页", "导入 PDF", "查看文件", "重命名", "删除工作区")) { _, which ->
+                when (which) {
+                    0 -> {
+                        val pdf = LearningTurn.latestReady(workspace)
+                        if (pdf != null) openWorkspaceFile(workspace, pdf)
+                        else showWorkspaceFiles(workspace)
+                    }
+                    1 -> {
+                        pdfWorkspace = workspace.id
+                        prefs.edit().putString("pending_pdf_workspace", workspace.id).apply()
+                        startActivityForResult(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+                            type = "application/pdf"; addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                        }, 73)
+                    }
+                    2 -> showWorkspaceFiles(workspace)
+                    4 -> AlertDialog.Builder(this).setTitle("删除工作区？")
+                        .setMessage("将删除“${workspace.name}”的对话、文件和学习页，无法恢复。")
+                        .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ ->
+                            val id = WorkspaceFiles(this).sessionId(workspace)
+                            id?.let { key -> deleteSession(allSessions.find { it.id == key } ?: Session(key, 0, emptyList())) }
+                            if (!workspace.container.deleteRecursively()) android.widget.Toast.makeText(this, "部分文件未能删除，请重试。", android.widget.Toast.LENGTH_LONG).show()
+                            showPanel(TAB_WORKSPACES)
+                        }.show()
+                    3 -> {
+                        val editor = android.widget.EditText(this).apply { setText(workspace.name) }
+                        AlertDialog.Builder(this).setTitle("工作区名称").setView(editor).setNegativeButton("取消", null)
+                            .setPositiveButton("保存") { _, _ ->
+                                try { WorkspaceFiles(this).rename(workspace, editor.text.toString()); showPanel(TAB_WORKSPACES) }
+                                catch (e: Exception) { android.widget.Toast.makeText(this, e.message, android.widget.Toast.LENGTH_LONG).show() }
+                            }.show()
+                    }
+                }
+            }.show()
+    }
+    private fun showWorkspaceFiles(workspace: WeWorkspace) {
+        val entries = File(workspace.root, "memory/pages").walkTopDown().maxDepth(10)
+            .filter { it.isFile && it.extension.lowercase() in setOf("md", "txt", "pdf") }.take(200).toList()
+        AlertDialog.Builder(this).setTitle("${workspace.name} · 文件")
+            .setItems(entries.map { it.relativeTo(workspace.root).path }.toTypedArray()) { _, index -> openWorkspaceFile(workspace, entries[index]) }
+            .setNegativeButton("关闭", null).show()
+    }
+    private fun openWorkspaceFile(workspace: WeWorkspace, source: File) {
+        worker.execute {
+            try {
+                val pdf = if (source.extension.lowercase() == "pdf") source else
+                    File(workspace.root, "memory/pages/paper-${java.util.UUID.randomUUID()}.pdf").also { LearningPageRenderer.render(source, it, true) }
+                ui.post { startActivity(android.content.Intent(this, com.opc.baize.paper.PaperActivity::class.java)
+                    .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.path).putExtra("autoStudy", true)
+                    .putExtra("sourcePath", if (source.extension.lowercase() == "pdf") LearningTurn.sourcePath(source) else "/" + source.relativeTo(workspace.root).path)) }
+            } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this, e.message, android.widget.Toast.LENGTH_LONG).show() } }
+        }
+    }
+    @Deprecated("Platform callback")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 74 && resultCode == RESULT_OK) {
+            data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { submitText(it) }
+            return
+        }
+        if (requestCode != 73 || resultCode != RESULT_OK) return
+        val id = pdfWorkspace ?: prefs.getString("pending_pdf_workspace", null) ?: return
+        val workspace = WorkspaceFiles(this).list().find { it.id == id } ?: return
+        val uri = data?.data ?: return
+        pdfWorkspace = null; prefs.edit().remove("pending_pdf_workspace").apply()
+        worker.execute {
+            val target = File(workspace.root, "memory/pages/import-${java.util.UUID.randomUUID()}.pdf")
+            try {
+                contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input)
+                    target.outputStream().use { output ->
+                        val bytes = ByteArray(65536); var size = 0L
+                        while (true) { val count = input.read(bytes); if (count < 0) break
+                            size += count; require(size <= 100L * 1024 * 1024) { "PDF 最多 100 MB" }; output.write(bytes, 0, count) }
+                    }
+                }
+                openWorkspaceFile(workspace, target)
+            } catch (e: Exception) { target.delete(); ui.post { android.widget.Toast.makeText(this, "PDF 导入失败，原资料保留。", android.widget.Toast.LENGTH_LONG).show() } }
+        }
     }
 
     // ---------- 面板【关于】 ----------
@@ -1384,13 +1457,15 @@ class MainActivity : Activity() {
                 setPadding(0, pxOf(4f), 0, pxOf(4f))
             }
         )
-        para("墨灵 1.0", 20f, inkDark)
-        para("栖于墨水屏中的墨中之灵 · 手写问答开源应用")
-        para("作者：小西校长")
+        para("WE · Write Everything", 20f, inkDark)
+        para("版本：${com.opc.baize.BuildConfig.VERSION_NAME}")
+        para("写下需求，继续工作。手写、语音与打字从首页开始；工作区保存任务、资料和页面，供下次继续。")
+        para("项目维护：RT · RT-C-6668882025")
         para("协议：GPL-3.0")
         para("这是一款自由开源软件（GPL-3.0）。你可以自由使用、研究、修改与再分发，" +
             "衍生作品须同样以 GPL-3.0 开源。完整条款见随附的 LICENSE 文件。")
-        para("GitHub：https://github.com/xiaoxi668v-prog/moling", 13f, inkFaint)
+        para("GitHub：https://github.com/RT-C-6668882025/WE", 13f, inkFaint)
+        para("基于 Moling 改造，感谢上游作者小西校长。上游：https://github.com/xiaoxi668v-prog/moling", 13f, inkFaint)
         col.addView(View(this).apply { setBackgroundColor(hairline) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
                 topMargin = pxOf(12f); bottomMargin = pxOf(12f)
@@ -1399,6 +1474,7 @@ class MainActivity : Activity() {
         para("· 手写字体：龙藏 / 马善政 / 智莽行（Google Fonts，SIL Open Font License 1.1）")
         para("· 手写识别：Google ML Kit Digital Ink Recognition")
         para("· 界面框架：AndroidX")
+        para("· Android Agent Runtime：NoHarry/android-agent-runtime（MIT）")
         para("· 本应用手写功能针对华为墨水屏进行优化，仅调用设备既有系统能力，非华为设备手写屏" +
             "自动调用纯自绘 + 运动预测算法，可能略有延时")
         return scrollPane(col)

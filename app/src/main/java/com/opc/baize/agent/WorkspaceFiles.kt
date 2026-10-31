@@ -25,6 +25,26 @@ class WorkspaceFiles(private val context: Context) {
         File(dir, "title.txt").writeText(name.trim())
         return WeWorkspace(id, name.trim(), dir).also { it.root }
     }
+    /** History is indexed in the same workspace list; the original session archive is retained. */
+    fun forSession(session: com.opc.baize.core.Session): WeWorkspace {
+        val existing = list().firstOrNull { sessionId(it) == session.id }
+        val workspace = existing ?: create(if (session.isEmpty()) "新工作区" else session.summary()).also { attachSession(it, session.id) }
+        val text = session.turns.joinToString("\n\n") { "你：${it.question}\nWE：${it.reply}" }
+        val source = File(workspace.root, "memory/pages/conversation.md")
+        if (text.isNotEmpty() && (!source.isFile || source.readText() != text)) {
+            LearningTurn.write(source, text); workspace.container.setLastModified(System.currentTimeMillis())
+        }
+        return workspace
+    }
+    fun sessionId(workspace: WeWorkspace): String? = File(workspace.container, "session-id.txt").takeIf(File::isFile)?.readText()
+    fun attachSession(workspace: WeWorkspace, id: String) {
+        require(id.isNotBlank() && id.length <= 256)
+        LearningTurn.write(File(workspace.container, "session-id.txt"), id)
+    }
+    fun rename(workspace: WeWorkspace, name: String) {
+        require(name.isNotBlank() && name.length <= 80) { "请输入 1～80 个字的名称" }
+        LearningTurn.write(File(workspace.container, "title.txt"), name.trim())
+    }
     fun skillNames(workspace: WeWorkspace): List<String> = File(workspace.root, ".agents/skills").listFiles().orEmpty()
         .filter { it.isDirectory && File(it, "SKILL.md").isFile }.map { it.name }.sorted()
     fun importSkill(workspace: WeWorkspace, uri: Uri): String {
