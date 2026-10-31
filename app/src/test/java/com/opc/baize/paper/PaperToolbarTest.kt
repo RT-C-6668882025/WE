@@ -21,7 +21,7 @@ class PaperToolbarTest {
         try {
             val all = views(controller.get().window.decorView)
             val visible = all.filter { it.visibility == View.VISIBLE }.filterIsInstance<TextView>().map { it.text.toString() }
-            assertTrue(visible.contains("发送")); assertTrue(visible.contains("笔刷")); assertTrue(visible.contains("菜单"))
+            assertTrue(visible.contains("发送")); assertTrue(visible.contains("笔刷")); assertTrue(visible.contains("菜单")); assertTrue(visible.contains("指令：识别"))
             for (removed in listOf("缩小","放大","导入 PDF","局部批改","选区解释","批改记录","查看生成页","停止","上一页","下一页")) assertFalse(removed,visible.contains(removed))
             assertFalse(all.filterIsInstance<Switch>().single { it.text == "自动识别" }.isChecked)
             val scope = all.filterIsInstance<Spinner>().single()

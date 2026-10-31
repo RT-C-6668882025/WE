@@ -66,6 +66,9 @@ class PaperActivity : Activity() {
     private lateinit var modeButton: Button
     private var command = 0
     private var stopped = false
+    private var visionGeneration = 0
+    private var visionTask: java.util.concurrent.Future<*>? = null
+    private lateinit var instructionButton: Button
     private var chooseTool: (PaperInkView.Mode) -> Unit = {}
     private val readyListener: (String,java.io.File) -> Unit = { owner,pdf ->
         handler.post { if (!destroyed && workspaceId == owner) {
@@ -143,7 +146,7 @@ class PaperActivity : Activity() {
             adapter = ArrayAdapter(this@PaperActivity, android.R.layout.simple_spinner_dropdown_item, arrayOf("整页","选区","仅文字"))
             contentDescription = "发送范围"
         }; controls.addView(scopeChoice,LinearLayout.LayoutParams(0,-2,1f))
-        button(controls,"指令") { showInstructions() }
+        instructionButton = button(controls,"指令：${PaperPrompts.labels[command]}") { showInstructions() }
         autoContinueSwitch = Switch(this).apply {
             text = "自动识别"; isChecked = false
             setOnCheckedChangeListener { _,enabled ->
@@ -156,7 +159,8 @@ class PaperActivity : Activity() {
         requestRow.addView(requestField,LinearLayout.LayoutParams(0,-2,3f))
         sendButton = button(requestRow,"发送") { sendCurrent() }
         stopButton = button(requestRow,"停止") {
-            stopped = true; interactionVersion++; studyJob?.cancel(); autoContinueSwitch.isChecked = false
+            stopped = true; visionGeneration++; visionTask?.cancel(true); submitting = false
+            interactionVersion++; studyJob?.cancel(); autoContinueSwitch.isChecked = false; updateBusy()
             handler.removeCallbacks(recognizeLater); status.text = "已停止；原页保留。"
         }.apply { visibility = android.view.View.GONE }
         generatedButton = Button(this).apply {
@@ -254,10 +258,11 @@ class PaperActivity : Activity() {
         val (bitmap, data, region) = ink.snapshot()
         val id = document!!; val index = pageIndex; val workspace = workspaceId; val interaction = interactionVersion
         val regionJson = JSONObject().put("left", region.left).put("top", region.top).put("right", region.right).put("bottom", region.bottom).toString()
+        val generation = ++visionGeneration
         stopped = false; submitting = true; updateBusy(); status.text = "正在提交第 ${index + 1} 页版本 ${data.revision}；可继续书写。"
         val snapshotName = "submission-${java.util.UUID.randomUUID()}"
         val snapshotSave = io.submit { repository.submission(id, index, snapshotName, data) }
-        ai.execute {
+        visionTask = ai.submit {
             try {
                 snapshotSave.get()
                 val bytes = ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
@@ -270,7 +275,7 @@ class PaperActivity : Activity() {
                 }
                 runOnUiThread { if (!destroyed) {
                     val unchanged = document == id && pageIndex == index && ink.page.revision == data.revision && interactionVersion == interaction
-                    if (stopped) return@runOnUiThread
+                    if (stopped || generation != visionGeneration) return@runOnUiThread
                     if (continueLearning && workspace != null && unchanged) {
                         study(prompt + "\n\n纸面理解结果：\n" + answer.take(24000),
                             "文档 $id，第 ${index + 1} 页，笔迹版本 ${data.revision}，区域 $regionJson")
@@ -283,10 +288,10 @@ class PaperActivity : Activity() {
                     }
                 } }
             } catch (e: Exception) {
-                message("提交未完成：" + com.opc.baize.subscription.SubscriptionErrors.describe(e) + "。笔迹保留，可继续书写。")
+                if (generation == visionGeneration && !stopped) message("提交未完成：" + com.opc.baize.subscription.SubscriptionErrors.describe(e) + "。笔迹保留，可继续书写。")
             } finally { bitmap.recycle(); runOnUiThread {
-                submitting = false; updateBusy()
-                if (!destroyed && studyJob?.isActive != true && autoRecognize && document == id && pageIndex == index && ink.page.revision != data.revision)
+                if (generation == visionGeneration) { submitting = false; updateBusy() }
+                if (generation == visionGeneration && !destroyed && studyJob?.isActive != true && autoRecognize && document == id && pageIndex == index && ink.page.revision != data.revision)
                     handler.postDelayed(recognizeLater, 1800)
             } }
         }
@@ -333,13 +338,13 @@ class PaperActivity : Activity() {
         val prompt = requestField.text.toString().trim().ifBlank { PaperPrompts.read(this,command) }
         if (scope == 2) {
             if (!automatic && prompt.isNotBlank()) study(prompt,"用户输入")
-        } else submit(prompt,automatic,command != 0)
+        } else submit(prompt,automatic,command != 0 || (requestField.text.isNotBlank() && prompt != PaperPrompts.read(this,0)))
     }
     private fun showInstructions() {
         AlertDialog.Builder(this).setTitle("指令 · 当前：${PaperPrompts.labels[command]}")
             .setItems(PaperPrompts.labels + arrayOf("编辑当前预设","编辑系统提示词","编辑页面任务模板")) { _,which ->
                 when(which) {
-                    in 0..3 -> { command = which; prefs.edit().putInt("paper_command",which).apply(); requestField.setText(PaperPrompts.read(this,which)) }
+                    in 0..3 -> { command = which; instructionButton.text = "指令：${PaperPrompts.labels[which]}"; prefs.edit().putInt("paper_command",which).apply(); requestField.setText(PaperPrompts.read(this,which)) }
                     6 -> {
                         val w = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id } }
                         if (w != null) {
@@ -505,7 +510,7 @@ class PaperActivity : Activity() {
         handler.removeCallbacks(recognizeLater)
         // Submitted work may finish saving its captured revision after this screen closes.
         io.execute { renderer?.close(); renderer = null }
-        ai.shutdown()
+        visionGeneration++; visionTask?.cancel(true); ai.shutdownNow()
         ink.release(); super.onDestroy()
     }
 }
