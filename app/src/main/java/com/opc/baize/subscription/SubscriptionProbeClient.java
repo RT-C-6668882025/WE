@@ -86,6 +86,10 @@ final class SubscriptionProbeClient implements Closeable {
         }
         return discovery;
     }
+    boolean recoverCallback(String url) {
+        LoopbackReceiver current = listener;
+        return current != null && current.recover(url);
+    }
     String signIn(Browser browser) throws Exception {
         synchronized (credentialState) { check(); clearSavedSession(); restoreIssue = ""; }
         diagnostics.mark(ProbeDiagnostics.Stage.DISCOVERY);

@@ -10,15 +10,41 @@ import static com.opc.baize.subscription.SubscriptionProtocol.*;
 final class LoopbackReceiver implements Closeable {
     private final ServerSocket server = new ServerSocket();
     private volatile boolean closed;
-    LoopbackReceiver() throws IOException {
+    interface Responder { void send(Socket socket, int status, String message) throws IOException; }
+    private final Responder responder;
+    private final java.util.concurrent.ArrayBlockingQueue<String> recovered = new java.util.concurrent.ArrayBlockingQueue<>(1);
+    LoopbackReceiver() throws IOException { this(LoopbackReceiver::respond); }
+    LoopbackReceiver(Responder responder) throws IOException {
+        this.responder = responder;
         server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 4);
         server.setSoTimeout(1000);
     }
     String callbackUrl() { return "http://127.0.0.1:" + server.getLocalPort() + "/auth/callback"; }
     String healthUrl() { return "http://127.0.0.1:" + server.getLocalPort() + "/probe-health"; }
+    boolean recover(String url) {
+        if (closed || url == null || url.length() > 16384) return false;
+        try {
+            URI uri = new URI(url.trim());
+            if (!"http".equals(uri.getScheme()) || !hostMatches(uri.getRawAuthority())
+                || !"/auth/callback".equals(uri.getRawPath()) || uri.getRawQuery() == null || uri.getRawFragment() != null) return false;
+            return recovered.offer(uri.getRawPath() + "?" + uri.getRawQuery());
+        } catch (Exception e) { return false; }
+    }
     Map<String, String> await(String state, String clientId, ProbeDiagnostics diagnostics) throws Exception {
         long deadline = System.nanoTime() + 300_000_000_000L;
         while (!closed && System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
+            String retry = recovered.poll();
+            if (retry != null) {
+                diagnostics.callbackSeen();
+                try {
+                    Map<String, String> result = callback(retry, state, clientId);
+                    diagnostics.mark(ProbeDiagnostics.Stage.CALLBACK_RECEIVED);
+                    return result;
+                } catch (Failure e) {
+                    diagnostics.rejected();
+                    if (e.code.equals("access_denied") || e.code.equals("oauth_callback_error")) throw e;
+                } catch (Exception e) { diagnostics.rejected(); }
+            }
             try (Socket socket = server.accept()) {
                 socket.setSoTimeout(3000);
                 InputStream in = new BufferedInputStream(socket.getInputStream());
@@ -39,25 +65,29 @@ final class LoopbackReceiver implements Closeable {
                 }
                 if (!headersValid || header == null || !hostMatches(host) || request.length != 3
                     || !"GET".equals(request[0]) || !request[2].startsWith("HTTP/1.")) {
-                    diagnostics.rejected(); respond(socket, 400, "Invalid local request."); continue;
+                    diagnostics.rejected(); responder.send(socket, 400, "Invalid local request."); continue;
                 }
                 if (request[1].equals("/probe-health")) {
-                    diagnostics.healthSeen(); respond(socket, 200, "MOLING_CALLBACK_OK\nBrowser can reach Moling on this device. Return to Moling or the original authorization tab.");
+                    diagnostics.healthSeen(); responder.send(socket, 200, "MOLING_CALLBACK_OK\nBrowser can reach Moling on this device. Return to Moling or the original authorization tab.");
                     continue;
                 }
                 if (request[1].startsWith("/auth/callback?")) diagnostics.callbackSeen();
                 Map<String, String> result;
                 try { result = callback(request[1], state, clientId); }
                 catch (Failure e) {
-                    diagnostics.rejected(); respond(socket, 400, "Callback rejected. Return to Moling.");
+                    diagnostics.rejected(); responder.send(socket, 400, "Callback rejected. Return to Moling.");
                     if (e.code.equals("access_denied") || e.code.equals("oauth_callback_error")) throw e;
                     continue;
-                } catch (Exception e) { diagnostics.rejected(); respond(socket, 400, "Invalid callback. Return to Moling."); continue; }
+                } catch (Exception e) { diagnostics.rejected(); responder.send(socket, 400, "Invalid callback. Return to Moling."); continue; }
                 diagnostics.mark(ProbeDiagnostics.Stage.CALLBACK_RECEIVED);
-                respond(socket, 200, "Authorization received. Return to Moling for token exchange and verification results.");
+                // The validated grant is independent of the browser's ability to read this receipt.
+                try { responder.send(socket, 200, "Authorization received. Return to WE for verification results."); }
+                catch (IOException ignored) { /* Browser/VPN network transition must not discard the grant. */ }
                 return result;
             } catch (SocketTimeoutException ignored) { /* Overall deadline still applies. */ }
-              catch (SocketException e) { if (closed) throw new Failure("cancelled"); throw e; }
+              catch (SocketException e) { if (closed) throw new Failure("cancelled"); /* One client disconnect is not cancellation. */ }
+              catch (IOException ignored) { /* A broken client does not end the authorization listener. */ }
+              catch (Failure e) { if (!e.code.equals("line_too_large")) throw e; diagnostics.rejected(); }
         }
         throw new Failure(closed || Thread.currentThread().isInterrupted() ? "cancelled" : "authorization_timeout");
     }

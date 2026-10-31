@@ -38,6 +38,27 @@ public final class LoopbackChecks {
                 yes(pending.get(3, TimeUnit.SECONDS).get("code").equals("test"));
                 yes(d.snapshot().contains("已收到并校验授权回调"));
             }
+            try (LoopbackReceiver receiver = new LoopbackReceiver((socket, status, message) -> { throw new java.io.IOException("synthetic browser disconnect"); })) {
+                Future<Map<String, String>> pending = executor.submit(() -> receiver.await("s", "", new ProbeDiagnostics()));
+                request(receiver.callbackUrl() + "?state=s&code=retained&client_id=test-client", "GET", null);
+                yes(pending.get(3, TimeUnit.SECONDS).get("code").equals("retained"));
+            }
+            try (LoopbackReceiver receiver = new LoopbackReceiver()) {
+                yes(!receiver.recover(receiver.callbackUrl().replace("127.0.0.1", "evil.test") + "?state=s&code=test&client_id=test-client"));
+                yes(!receiver.recover(receiver.callbackUrl().replace("http:", "https:") + "?state=s&code=test&client_id=test-client"));
+                yes(!receiver.recover(receiver.healthUrl() + "?state=s&code=test&client_id=test-client"));
+                yes(receiver.recover(receiver.callbackUrl() + "?state=s&code=recovered&client_id=test-client"));
+                Future<Map<String, String>> pending = executor.submit(() -> receiver.await("s", "", new ProbeDiagnostics()));
+                yes(pending.get(3, TimeUnit.SECONDS).get("code").equals("recovered"));
+            }
+            try (LoopbackReceiver receiver = new LoopbackReceiver()) {
+                ProbeDiagnostics rejected = new ProbeDiagnostics();
+                yes(receiver.recover(receiver.callbackUrl() + "?state=wrong&code=test&client_id=test-client"));
+                Future<Map<String, String>> pending = executor.submit(() -> receiver.await("s", "", rejected));
+                request(receiver.callbackUrl() + "?state=s&code=correct&client_id=test-client", "GET", null);
+                yes(pending.get(3, TimeUnit.SECONDS).get("code").equals("correct"));
+                yes(rejected.snapshot().contains("被拒绝请求：1"));
+            }
             try (LoopbackReceiver receiver = new LoopbackReceiver()) {
                 Future<Map<String, String>> pending = executor.submit(() -> receiver.await("s", "", new ProbeDiagnostics()));
                 receiver.close();

@@ -23,6 +23,7 @@ class SubscriptionSettingsActivity : Activity() {
     private lateinit var textChoice: Spinner
     private lateinit var imageChoice: Spinner
     private lateinit var directVision: CheckBox
+    private lateinit var recover: Button
     private lateinit var cancel: Button
     private val buttons = mutableListOf<Button>()
     private var catalog = emptyList<ModelCatalog.Entry>()
@@ -93,6 +94,22 @@ class SubscriptionSettingsActivity : Activity() {
         action(root, "恢复保存的登录 / 重试身份校验") { gateway.restoreSavedSession() }
         action(root, "刷新登录令牌（接近过期时）") { gateway.refreshSession() }
         action(root, "退出并撤销订阅会话") { gateway.signOut() }
+        recover = Button(this).apply {
+            text = "浏览器回调失败：恢复本次授权"
+            setOnClickListener {
+                val editor = EditText(this@SubscriptionSettingsActivity).apply {
+                    hint = "粘贴本次失败页面的完整地址"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    isSingleLine = true; setSaveEnabled(false)
+                }
+                android.app.AlertDialog.Builder(this@SubscriptionSettingsActivity).setTitle("恢复本机回调")
+                    .setMessage("仅在浏览器最后跳到 127.0.0.1 时失败使用。复制该错误页完整地址并粘贴到这里；地址含一次性授权信息，不要发给别人。仍会校验本次授权状态，超时后需重新授权。")
+                    .setView(editor).setNegativeButton("取消") { _, _ -> editor.text.clear() }
+                    .setPositiveButton("恢复") { _, _ ->
+                        val accepted = gateway.recoverCallback(editor.text.toString()); editor.text.clear()
+                        status.text = if (accepted) "回调已提交，正在校验本次授权……" else "地址不属于当前本机回调，或本次授权已结束。请检查地址或重新授权。"
+                    }.setOnCancelListener { editor.text.clear() }.show()
+            }
+        }; root.addView(recover)
         cancel = Button(this).apply { text = "取消正在进行的授权"; setOnClickListener { gateway.cancel(); observedLogin = -1; update() } }; root.addView(cancel)
         root.addView(Button(this).apply { text = "ChatGPT 用量设置"; setOnClickListener { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/settings/usage"))) } catch (e: Exception) { status.text = "请手动打开 ChatGPT 设置 → 用量。" } } })
         root.addView(Button(this).apply { text = "返回墨灵"; setOnClickListener { finish() } })
@@ -135,6 +152,7 @@ class SubscriptionSettingsActivity : Activity() {
         if (observedCatalog !== gateway.cachedCatalog() && !busy) showModels(gateway.cachedCatalog())
         buttons.forEach { it.isEnabled = !busy && !running }
         textChoice.isEnabled = !busy && !running; imageChoice.isEnabled = !busy && !running; directVision.isEnabled = !busy && !running
+        recover.visibility = if (running) View.VISIBLE else View.GONE
         cancel.visibility = if (running) View.VISIBLE else View.GONE
         showChecks(); diagnostics.text = gateway.diagnostics()
     }

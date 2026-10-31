@@ -34,6 +34,8 @@ public final class SubscriptionGateway implements SubscriptionConnection {
     private final LoginOperation login = new LoginOperation();
     private final java.util.concurrent.ExecutorService authorization = java.util.concurrent.Executors.newSingleThreadExecutor();
     public boolean isLoginRunning() { return login.isRunning(); }
+    /** Nonblocking: signIn holds the gateway monitor while awaiting the browser. */
+    public boolean recoverCallback(String url) { return login.isRunning() && client.recoverCallback(url); }
     public String loginResult() { return login.result(); }
     public long loginVersion() { return login.version(); }
     public String takeBrowserUrl() { return login.takeBrowserUrl(); }

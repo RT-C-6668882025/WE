@@ -80,11 +80,11 @@ jobs:
       - name: Download the tested APK from this exact run
         run: |
           gh run download "$GITHUB_RUN_ID" --name we-android-native-agent-apk --dir apk
-          mv apk/app-debug.apk apk/WE-v0.4.1-preview.apk
+          mv apk/app-debug.apk apk/WE-v0.4.2-preview.apk
           cd apk
-          sha256sum WE-v0.4.1-preview.apk > SHA256SUMS.txt
+          sha256sum WE-v0.4.2-preview.apk > SHA256SUMS.txt
       - name: Publish WE preview
         run: |
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
-          gh release create v0.4.1-we-preview apk/WE-v0.4.1-preview.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "WE v0.4.1 Preview" --notes-file docs/releases/v0.4.1.md
+          gh release create v0.4.2-we-preview apk/WE-v0.4.2-preview.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "WE v0.4.2 Preview" --notes-file docs/releases/v0.4.2.md
