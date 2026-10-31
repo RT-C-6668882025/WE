@@ -30,8 +30,8 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         minSdk = 26
         targetSdk = 34
-        versionCode = 49
-        versionName = "0.4.9"
+        versionCode = 50
+        versionName = "0.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 可选的局域网降级识别通道默认地址：开源版留空，用户如自建 Mac 端 server.py
         // 可在设置里填（不填则纯走 ML Kit 本地识别 + 用户配置的大模型）。

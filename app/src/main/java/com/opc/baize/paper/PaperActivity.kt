@@ -53,72 +53,71 @@ class PaperActivity : Activity() {
     private var interactionVersion = 0L
     private var workspaceId: String? = null
     private val recognizeLater = Runnable {
-        if (!submitting && studyJob?.isActive != true && !loading && !destroyed) submit(RECOGNIZE, true)
+        if (!submitting && studyJob?.isActive != true && !loading && !destroyed) sendCurrent(true)
     }
     private val prefs by lazy { getSharedPreferences("moling", MODE_PRIVATE) }
+    private lateinit var previousPage: Button
+    private lateinit var nextPage: Button
+    private lateinit var requestField: EditText
+    private lateinit var sendButton: Button
+    private lateinit var stopButton: Button
+    private lateinit var generatedButton: Button
+    private lateinit var scopeChoice: Spinner
+    private lateinit var modeButton: Button
+    private var command = 0
+    private var stopped = false
+    private var chooseTool: (PaperInkView.Mode) -> Unit = {}
+    private fun updateBusy() {
+        val busy = submitting || studyJob?.isActive == true
+        sendButton.isEnabled = !busy
+        stopButton.visibility = if (busy) android.view.View.VISIBLE else android.view.View.GONE
+    }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); repository = PaperRepository(this)
+        workspaceId = intent.getStringExtra("workspace")
+        command = prefs.getInt("paper_command", 0).coerceIn(0,3)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         setContentView(root)
+        status = TextView(this).apply { text = "手动识别 · 双指移动与缩放 · 笔迹自动保存"; textSize = 13f }
         fun row() = LinearLayout(this).also { root.addView(it) }
         fun button(row: LinearLayout, text: String, call: () -> Unit) = Button(this).apply {
             this.text = text; textSize = 12f; setOnClickListener { call() }
-            row.addView(this, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(this, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        val top = row()
-        button(top, "导入 PDF") {
-            if (!loading) startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                type = "application/pdf"; addCategory(Intent.CATEGORY_OPENABLE)
-            }, 51)
-        }
-        button(top, "上一页") { if (!loading && pageIndex > 0) document?.let { load(it, pageIndex - 1) } }
-        button(top, "下一页") { if (!loading && pageIndex + 1 < pageCount) document?.let { load(it, pageIndex + 1) } }
-        button(top, "工具") { toolsVisible = !toolsVisible; extraTools.forEach { it.visibility = if (toolsVisible) android.view.View.VISIBLE else android.view.View.GONE } }
-        button(top, "返回") { finish() }
-        pageLabel = TextView(this).apply { text = "本地 PDF 练习 · 笔迹自动独立保存" }; root.addView(pageLabel)
-        val tools = row().apply { visibility = android.view.View.GONE }; extraTools += tools
         ink = PaperInkView(this)
-        val modeButtons = mutableMapOf<PaperInkView.Mode, Button>()
-        fun selectTool(mode: PaperInkView.Mode) {
-            ink.mode = mode
-            modeButtons.forEach { (key, value) ->
-                value.isSelected = key == mode
-                value.backgroundTintList = android.content.res.ColorStateList.valueOf(if (key == mode) Color.rgb(205, 225, 255) else Color.rgb(238, 238, 238))
-                value.setTextColor(if (key == mode) Color.rgb(15, 65, 135) else Color.DKGRAY)
+        ink.stylusOnly = prefs.getBoolean("paper_stylus_only", false)
+        val top = row()
+        button(top,"工作区") { finish() }
+        previousPage = button(top,"上一页") { if (!loading && pageIndex > 0) document?.let { load(it,pageIndex-1) } }.apply { visibility = android.view.View.GONE }
+        nextPage = button(top,"下一页") { if (!loading && pageIndex+1 < pageCount) document?.let { load(it,pageIndex+1) } }.apply { visibility = android.view.View.GONE }
+        modeButton = button(top,"手写") {
+            AlertDialog.Builder(this).setTitle("同一工作区 · 输入模式")
+                .setItems(arrayOf("手写","绘画")) { _,which -> setInputMode(which == 1) }.show()
+        }
+        button(top,"菜单") { showCanvasMenu() }
+        pageLabel = TextView(this).apply { text = "当前工作区 · 笔迹自动保存" }; root.addView(pageLabel)
+        val tools = row()
+        val modes = mutableMapOf<PaperInkView.Mode,Button>()
+        chooseTool = { mode ->
+            interactionVersion++; handler.removeCallbacks(recognizeLater); ink.mode = mode
+            modes.forEach { (key,value) ->
                 value.text = (if (key == mode) "✓ " else "") + when(key) {
-                    PaperInkView.Mode.WRITE -> "画笔"
-                    PaperInkView.Mode.MOVE -> "移动"
-                    PaperInkView.Mode.SELECT -> "框选"
-                    PaperInkView.Mode.ERASE -> "橡皮"
+                    PaperInkView.Mode.WRITE -> "画笔"; PaperInkView.Mode.ERASE -> "橡皮"; else -> "框选"
                 }
+                value.backgroundTintList = android.content.res.ColorStateList.valueOf(if (key == mode) Color.rgb(205,225,255) else Color.rgb(238,238,238))
             }
         }
-        modeButtons[PaperInkView.Mode.WRITE] = button(tools, "画笔") { selectTool(PaperInkView.Mode.WRITE); status.text = "画笔：在纸上写画；颜色、粗细在下方设置。" }
-        modeButtons[PaperInkView.Mode.MOVE] = button(tools, "移动") { selectTool(PaperInkView.Mode.MOVE); status.text = "移动：单指拖动纸张；任何工具下都能双指拖动、捏合缩放。" }
-        modeButtons[PaperInkView.Mode.SELECT] = button(tools, "框选") { if (ink.mode == PaperInkView.Mode.SELECT || ink.hasSelection) { ink.clearSelection(); selectTool(PaperInkView.Mode.WRITE); status.text = "已取消框选，当前范围为整页。" }
-            else { selectTool(PaperInkView.Mode.SELECT); status.text = "拖出矩形选区；再次点框选或轻点纸面可取消。" } }
-        modeButtons[PaperInkView.Mode.ERASE] = button(tools, "橡皮") { selectTool(PaperInkView.Mode.ERASE); status.text = "橡皮已启用：蓝色圆圈是擦除范围，碰到整条笔迹即擦除；可撤销。" }
-        selectTool(PaperInkView.Mode.WRITE)
-        val navigation = row().apply { visibility = android.view.View.GONE }; extraTools += navigation
-        button(navigation, "撤销") { if (!loading) ink.undo() }
-        button(navigation, "缩小") { ink.zoom(0.8f) }
-        button(navigation, "放大") { ink.zoom(1.25f) }
-        button(navigation, "整页居中") { ink.resetView(); status.text = "已恢复整页视图。" }
-        button(navigation, "按钮说明") {
-            AlertDialog.Builder(this).setTitle("绘画与学习 · 按钮说明")
-                .setMessage("画笔：在生成内容或 PDF 上自由写画。绘画入口使用 Drawpile 经典笔刷核心，压力改变粗细。\n手势：双指捏合缩放、双指拖动纸张，任何工具下都能用；松开后再落笔继续写画。\n移动：单指拖动纸张，不留下笔迹。\n框选：拖出矩形限定 AI 范围；再次点框选或在框选工具下轻点纸面可取消。未框选时处理整页。\n橡皮：按钮高亮、蓝色圆圈显示擦除范围；擦掉碰到的整条笔迹，底图保留。\n撤销：恢复上一次画笔或橡皮操作，最多 30 步；一趟连续擦除只需撤销一次。\n缩小 / 放大：只改变看纸的大小，不改变笔迹。\n整页居中：恢复整页大小和居中位置。\n笔迹颜色 / 笔触粗细：设置接下来画出的线；不改变已有笔迹。\n修改内容：直接编辑生成页文字、留白、图形，保存为可继续写画的新版本。\n完成需求：发送输入框中的需求，让 AI 生成或修改页面。\n查看生成页：打开最新生成的学习页。\n识别选区 / 整页：识别纸上的文字、图和笔迹。\n局部批改 / 选区解释：让 AI 检查答案或解释内容。\n批改记录：查看本页之前的 AI 回复。\n停笔后自动继续：停笔约 1.8 秒后使用订阅理解反馈、继续学习；绘画默认关闭。\n仅笔书写：阻止手指写画、擦除和框选；仍能双指移动缩放，或用移动工具单指拖纸。\n停止：取消本机当前 AI 任务并关闭自动继续。\n导入 PDF / 上一页 / 下一页：切换文档或页面。笔迹自动保存，返回可退出。")
-                .setPositiveButton("明白了", null).show()
+        modes[PaperInkView.Mode.WRITE] = button(tools,"画笔") { chooseTool(PaperInkView.Mode.WRITE) }
+        modes[PaperInkView.Mode.SELECT] = button(tools,"框选") {
+            if (ink.mode == PaperInkView.Mode.SELECT || ink.hasSelection) { ink.clearSelection(); chooseTool(PaperInkView.Mode.WRITE); status.text = "已取消框选" }
+            else { scopeChoice.setSelection(1); chooseTool(PaperInkView.Mode.SELECT); status.text = "拖出矩形；再次点框选或轻点纸面取消。" }
         }
-        val pens = row().apply { visibility = android.view.View.GONE }; extraTools += pens
-        button(pens, "笔迹颜色") {
-            val colors = intArrayOf(Color.BLACK, Color.rgb(25, 85, 175), Color.rgb(190, 40, 40), Color.rgb(35, 125, 75))
-            AlertDialog.Builder(this).setTitle("笔迹颜色").setItems(arrayOf("黑", "蓝", "红", "绿")) { _, index -> ink.penColor = colors[index]; selectTool(PaperInkView.Mode.WRITE) }.show()
-        }
-        button(pens, "修改内容") { editGeneratedContent() }
-        button(pens, "笔触粗细") {
-            AlertDialog.Builder(this).setTitle("笔触粗细").setItems(arrayOf("细", "标准", "粗", "画笔")) { _, index -> ink.penWidth = floatArrayOf(1.2f, 1.8f, 3f, 5f)[index]; selectTool(PaperInkView.Mode.WRITE) }.show()
-        }
-        root.addView(ink, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        modes[PaperInkView.Mode.ERASE] = button(tools,"橡皮") { chooseTool(PaperInkView.Mode.ERASE); status.text = "蓝色圆圈是擦除范围；当前擦除整条笔迹，可撤销。" }
+        button(tools,"撤销") { if (!loading) ink.undo() }
+        button(tools,"笔刷") { showBrushPanel() }
+        button(tools,"居中") { ink.resetView() }
+        chooseTool(PaperInkView.Mode.WRITE)
+        root.addView(ink, LinearLayout.LayoutParams(-1,0,1f))
         ink.toolFeedback = { status.text = it }
         ink.changed = { data ->
             handler.removeCallbacks(recognizeLater)
@@ -130,59 +129,43 @@ class PaperActivity : Activity() {
             }
         }
         ink.strokeStarted = { interactionVersion++; handler.removeCallbacks(recognizeLater) }
-        val requestRow = row()
-        val request = EditText(this).apply { hint = "写下需求，或直接在纸上写、画"; textSize = 16f }
-        requestRow.addView(request, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f))
-        button(requestRow, "完成需求") {
-            val text = request.text.toString().trim()
-            if (text.isNotBlank() && !loading && !submitting && studyJob?.isActive != true) {
-                study(text, "用户在学习页输入的需求"); request.text.clear()
-            }
-        }
-        button(requestRow, "查看生成页") {
-            val workspace = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id } }
-            val pdf = workspace?.let { LearningTurn.latestReady(it) } ?: readyPdf
-            if (pdf != null && workspace != null) openGenerated(pdf, workspace.id, LearningTurn.sourcePath(pdf))
-        }
-        button(requestRow, "停止") { interactionVersion++; studyJob?.cancel(); autoContinueSwitch.isChecked = false; autoRecognize = false; autoStudy = false; handler.removeCallbacks(recognizeLater); status.text = "已停止自动继续，原页保留。" }
-        val recognition = row()
-        button(recognition, "识别选区 / 整页") { submit(RECOGNIZE) }
+        val controls = row()
+        scopeChoice = Spinner(this).apply {
+            adapter = ArrayAdapter(this@PaperActivity, android.R.layout.simple_spinner_dropdown_item, arrayOf("整页","选区","仅文字"))
+            contentDescription = "发送范围"
+        }; controls.addView(scopeChoice,LinearLayout.LayoutParams(0,-2,1f))
+        button(controls,"指令") { showInstructions() }
         autoContinueSwitch = Switch(this).apply {
-            text = "停笔后自动继续"; isChecked = intent.getBooleanExtra("autoStudy", false); autoRecognize = isChecked; setOnCheckedChangeListener { _, enabled ->
-                autoRecognize = enabled; autoStudy = enabled; interactionVersion++; this@PaperActivity.handler.removeCallbacks(recognizeLater)
-                status.text = if (enabled) "停笔后理解反馈并更新学习页，使用订阅额度。" else "已关闭停笔识别。"
+            text = "自动识别"; isChecked = false
+            setOnCheckedChangeListener { _,enabled ->
+                autoRecognize = enabled; interactionVersion++; this@PaperActivity.handler.removeCallbacks(recognizeLater)
+                status.text = if (enabled) "自动识别已开启；停笔后按当前范围和指令处理。" else "手动模式：按需点击发送。"
             }
-        }; recognition.addView(autoContinueSwitch)
-        recognition.addView(Switch(this).apply {
-            text = "仅笔书写"; setOnCheckedChangeListener { _, enabled -> ink.stylusOnly = enabled }
-        })
-        val actions = row().apply { visibility = android.view.View.GONE }; extraTools += actions
-        button(actions, "局部批改") { submit("请用现代中文批改图中的手写作答：指出正确与错误、理由和正确解法；看不清或缺题干时明确说明。") }
-        button(actions, "选区解释") { submit("请用现代中文解释图中选区的题目与知识点，给出清晰步骤；信息不足时明确说明。") }
-        button(actions, "批改记录") {
-            val id = document; val index = pageIndex
-            if (id != null) io.execute {
-                try {
-                    val records = repository.results(id, index)
-                    runOnUiThread { if (!destroyed) {
-                        if (records.isEmpty()) status.text = "本页暂无批改记录。"
-                        else AlertDialog.Builder(this).setTitle("本页批改记录")
-                            .setItems(records.map { "版本 ${it.getLong("sourceRevision")} · ${java.util.Date(it.getLong("createdAt"))}" }.toTypedArray()) { _, which ->
-                                AlertDialog.Builder(this).setTitle("源笔迹版本 ${records[which].getLong("sourceRevision")}")
-                                    .setMessage(records[which].getString("answer")).setPositiveButton("关闭", null).show()
-                            }.show()
-                    } }
-                } catch (e: Exception) { message("批改记录读取失败，文件已保留。") }
+        }; controls.addView(autoContinueSwitch)
+        val requestRow = row()
+        requestField = EditText(this).apply { hint = "输入指令，留空只识别"; textSize = 16f; maxLines = 3 }
+        requestRow.addView(requestField,LinearLayout.LayoutParams(0,-2,3f))
+        sendButton = button(requestRow,"发送") { sendCurrent() }
+        stopButton = button(requestRow,"停止") {
+            stopped = true; interactionVersion++; studyJob?.cancel(); autoContinueSwitch.isChecked = false
+            handler.removeCallbacks(recognizeLater); status.text = "已停止；原页保留。"
+        }.apply { visibility = android.view.View.GONE }
+        generatedButton = Button(this).apply {
+            text = "打开新生成的页面"; visibility = android.view.View.GONE
+            setOnClickListener {
+                val w = workspaceId?.let { id -> WorkspaceFiles(this@PaperActivity).list().find { it.id == id } }
+                val pdf = w?.let { LearningTurn.latestReady(it) } ?: readyPdf
+                if (pdf != null && w != null) openGenerated(pdf,w.id,LearningTurn.sourcePath(pdf))
             }
-        }
-        status = TextView(this).apply { text = "可离线书写；自动继续开启时，停笔后使用订阅理解并生成页面。"; textSize = 14f }; root.addView(status)
+        }; root.addView(generatedButton)
+        root.addView(status)
         val generated = intent.getStringExtra("generatedPdf")
-        if (intent.getStringExtra("entryMode") == "drawing") { ink.brushEngine = DrawpileBrush.ENGINE; ink.penWidth = 5f; toolsVisible = true; extraTools.forEach { it.visibility = android.view.View.VISIBLE } }
+        setInputMode(if (intent.hasExtra("entryMode")) intent.getStringExtra("entryMode") == "drawing" else prefs.getBoolean("paper_drawing_${workspaceId.orEmpty()}",false))
         workspaceId = intent.getStringExtra("workspace")
-        autoStudy = intent.getBooleanExtra("autoStudy", false)
+        autoStudy = false
         if (generated != null && workspaceId != null) {
             openGenerated(java.io.File(generated), workspaceId!!, intent.getStringExtra("sourcePath"))
-        } else prefs.getString("paper_last_document", null)?.let { load(it, prefs.getInt("paper_last_page", 0)) }
+        } else prefs.getString("paper_last_document_${workspaceId.orEmpty()}", null)?.let { load(it, prefs.getInt("paper_last_page_${workspaceId.orEmpty()}", 0)) }
     }
     @Deprecated("Platform result callback retained to avoid introducing an Activity framework")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -191,9 +174,16 @@ class PaperActivity : Activity() {
         val uri = data?.data ?: return
         if (loading) return
         loading = true; ink.isEnabled = false; status.text = "正在导入本地副本……"
+        val ownerId = workspaceId
         io.execute {
             try {
                 val id = repository.importPdf(uri)
+                if (ownerId != null) {
+                    val owner = WorkspaceFiles(this).list().first { it.id == ownerId }
+                    val copy = java.io.File(owner.root,"memory/pages/import-$id.pdf")
+                    if (!copy.exists()) repository.pdf(id).copyTo(copy)
+                    prefs.edit().putString("paper_workspace_$id",ownerId).remove("paper_source_$id").putString("paper_last_pdf_$ownerId",copy.path).apply()
+                }
                 runOnUiThread { if (!destroyed) { loading = false; load(id, 0) } }
             } catch (e: Exception) { runOnUiThread { if (!destroyed) { loading = false; ink.isEnabled = true; status.text = "PDF 导入失败，请检查文件格式或大小（最多 100MB）。" } } }
         }
@@ -220,7 +210,11 @@ class PaperActivity : Activity() {
                     document = id; pageIndex = index; pageCount = count
                     workspaceId = prefs.getString("paper_workspace_$id", null)
                     sourcePath = prefs.getString("paper_source_$id", null)
-                    autoStudy = workspaceId != null
+                    autoStudy = false
+                    previousPage.visibility = if (count > 1) android.view.View.VISIBLE else android.view.View.GONE
+                    nextPage.visibility = previousPage.visibility
+                    previousPage.isEnabled = index > 0; nextPage.isEnabled = index+1 < count
+                    prefs.edit().putString("paper_last_document_${workspaceId.orEmpty()}", id).putInt("paper_last_page_${workspaceId.orEmpty()}",index).apply()
                     ink.load(result.first, result.second); ink.isEnabled = true; loading = false
                     pageLabel.text = "第 ${index + 1} / $count 页 · 笔迹自动保存"
                     prefs.edit().putString("paper_last_document", id).putInt("paper_last_page", index).apply()
@@ -232,7 +226,7 @@ class PaperActivity : Activity() {
             } } }
         }
     }
-    private fun submit(prompt: String, automatic: Boolean = false) {
+    private fun submit(prompt: String, automatic: Boolean = false, continueLearning: Boolean = false) {
         handler.removeCallbacks(recognizeLater)
         if (loading || document == null || submitting || studyJob?.isActive == true) return
         if (prefs.getString("model_provider", "anthropic") != "subscription") {
@@ -243,7 +237,7 @@ class PaperActivity : Activity() {
         val (bitmap, data, region) = ink.snapshot()
         val id = document!!; val index = pageIndex; val workspace = workspaceId; val interaction = interactionVersion
         val regionJson = JSONObject().put("left", region.left).put("top", region.top).put("right", region.right).put("bottom", region.bottom).toString()
-        submitting = true; status.text = "正在提交第 ${index + 1} 页版本 ${data.revision}；可继续书写。"
+        stopped = false; submitting = true; updateBusy(); status.text = "正在提交第 ${index + 1} 页版本 ${data.revision}；可继续书写。"
         val snapshotName = "submission-${java.util.UUID.randomUUID()}"
         val snapshotSave = io.submit { repository.submission(id, index, snapshotName, data) }
         ai.execute {
@@ -259,8 +253,9 @@ class PaperActivity : Activity() {
                 }
                 runOnUiThread { if (!destroyed) {
                     val unchanged = document == id && pageIndex == index && ink.page.revision == data.revision && interactionVersion == interaction
-                    if (autoStudy && workspace != null && unchanged) {
-                        study("以下是纸面识别/批改结果。请结合原学习材料理解我的作答或修改意图并继续：\n" + answer.take(24000),
+                    if (stopped) return@runOnUiThread
+                    if (continueLearning && workspace != null && unchanged) {
+                        study(prompt + "\n\n纸面理解结果：\n" + answer.take(24000),
                             "文档 $id，第 ${index + 1} 页，笔迹版本 ${data.revision}，区域 $regionJson")
                     } else if (automatic) {
                         status.text = "识别已保存；页面已有新笔迹，等待下一次停笔后继续。"
@@ -273,7 +268,7 @@ class PaperActivity : Activity() {
             } catch (e: Exception) {
                 message("提交未完成：" + com.opc.baize.subscription.SubscriptionErrors.describe(e) + "。笔迹保留，可继续书写。")
             } finally { bitmap.recycle(); runOnUiThread {
-                submitting = false
+                submitting = false; updateBusy()
                 if (!destroyed && studyJob?.isActive != true && autoRecognize && document == id && pageIndex == index && ink.page.revision != data.revision)
                     handler.postDelayed(recognizeLater, 1800)
             } }
@@ -290,28 +285,122 @@ class PaperActivity : Activity() {
                 val sourceFile = source?.let { java.io.File(owner.root, it.removePrefix("/")).canonicalFile }
                     ?.takeIf { it.isFile && it.path.startsWith(owner.root.canonicalPath + "/memory/pages/") }
                 val id = repository.importPdf(android.net.Uri.fromFile(file))
-                val drawing = LearningPageRenderer.pageMap(file, 0)?.optString("mode") == "drawing"
                 prefs.edit().putString("paper_workspace_$id", workspace).putString("paper_source_$id",
                     sourceFile?.let { "/" + it.relativeTo(owner.root).path }).apply()
                 runOnUiThread { if (!destroyed) {
-                    if (drawing) {
-                        ink.brushEngine = DrawpileBrush.ENGINE
-                        autoContinueSwitch.isChecked = false; autoRecognize = false; autoStudy = false
-                        handler.removeCallbacks(recognizeLater); toolsVisible = true
-                        extraTools.forEach { it.visibility = android.view.View.VISIBLE }
-                    }
-                    loading = false; load(id, 0)
+                    prefs.edit().putString("paper_last_pdf_$workspace",file.path).apply()
+                    val previous = prefs.getString("paper_last_document_$workspace",null)
+                    loading = false; load(id,if (previous == id) prefs.getInt("paper_last_page_$workspace",0) else 0)
                 } }
             } catch (e: Exception) { runOnUiThread { if (!destroyed) {
                 loading = false; ink.isEnabled = true; status.text = "学习页打开失败，原文件已保留。"
             } } }
         }
     }
+    private fun setInputMode(drawing: Boolean) {
+        ink.brushEngine = if (drawing) DrawdanceBrush.ENGINE else "vector"
+        ink.penWidth = if (drawing) prefs.getFloat("drawing_width",5f) else prefs.getFloat("handwriting_width",1.8f)
+        modeButton.text = if (drawing) "绘画 ▾" else "手写 ▾"
+        chooseTool(PaperInkView.Mode.WRITE)
+        workspaceId?.let { prefs.edit().putBoolean("paper_drawing_$it",drawing).apply() }
+    }
+    private fun sendCurrent(automatic: Boolean = false) {
+        if (loading || submitting || studyJob?.isActive == true) return
+        val scope = scopeChoice.selectedItemPosition
+        if (scope == 1 && !ink.hasSelection) {
+            if (!automatic) { chooseTool(PaperInkView.Mode.SELECT); status.text = "请先框选要发送的区域，或切换为整页。" }
+            return
+        }
+        if (scope == 0) ink.clearSelection()
+        val prompt = requestField.text.toString().trim().ifBlank { PaperPrompts.read(this,command) }
+        if (scope == 2) {
+            if (!automatic && prompt.isNotBlank()) study(prompt,"用户输入")
+        } else submit(prompt,automatic,command != 0)
+    }
+    private fun showInstructions() {
+        AlertDialog.Builder(this).setTitle("指令 · 当前：${PaperPrompts.labels[command]}")
+            .setItems(PaperPrompts.labels + arrayOf("编辑当前预设","编辑系统提示词","编辑页面任务模板")) { _,which ->
+                when(which) {
+                    in 0..3 -> { command = which; prefs.edit().putInt("paper_command",which).apply(); requestField.setText(PaperPrompts.read(this,which)) }
+                    6 -> {
+                        val w = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id } }
+                        if (w != null) {
+                            val file = java.io.File(w.root,"memory/agent-prompt.txt")
+                            val editor = EditText(this).apply { minLines = 6; maxLines = 14; setText(if (file.isFile) file.readText() else LearningTurn.DEFAULT_TEMPLATE) }
+                            AlertDialog.Builder(this).setTitle("页面任务模板 · 当前工作区").setMessage("变量：{request} 需求、{source} 原材料、{origin} 来源、{output} 输出路径。")
+                                .setView(editor).setNegativeButton("取消",null)
+                                .setNeutralButton("恢复默认") { _,_ -> file.delete() }
+                                .setPositiveButton("保存") { _,_ ->
+                                    val text = editor.text.toString()
+                                    if (text.length <= 48000) LearningTurn.write(file,text) else status.text = "模板最多 48000 字"
+                                }.show()
+                        }
+                    }
+                    4,5 -> {
+                        val system = which == 5
+                        val editor = EditText(this).apply { minLines = 5; maxLines = 12; setText(if (system) PaperPrompts.system(this@PaperActivity) else PaperPrompts.read(this@PaperActivity,command)) }
+                        AlertDialog.Builder(this).setTitle(if (system) "系统提示词" else "${PaperPrompts.labels[command]} · 可修改")
+                            .setView(editor).setNegativeButton("取消",null)
+                            .setNeutralButton("恢复默认") { _,_ ->
+                                if (system) PaperPrompts.saveSystem(this,PaperPrompts.DEFAULT_SYSTEM)
+                                else { PaperPrompts.save(this,command,PaperPrompts.defaults[command]); requestField.setText(PaperPrompts.read(this,command)) }
+                            }
+                            .setPositiveButton("保存") { _,_ ->
+                                try {
+                                    if (system) PaperPrompts.saveSystem(this,editor.text.toString())
+                                    else { PaperPrompts.save(this,command,editor.text.toString()); requestField.setText(editor.text) }
+                                } catch (e: Exception) { status.text = e.message }
+                            }.show()
+                    }
+                }
+            }.show()
+    }
+    private fun showBrushPanel() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24,12,24,12) }
+        val colors = intArrayOf(Color.BLACK,Color.rgb(25,85,175),Color.rgb(190,40,40),Color.rgb(35,125,75))
+        val color = Spinner(this).apply {
+            adapter = ArrayAdapter(this@PaperActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("黑","蓝","红","绿"))
+            setSelection(colors.indexOf(ink.penColor).coerceAtLeast(0))
+        }; box.addView(color)
+        val label = TextView(this); box.addView(label)
+        val size = SeekBar(this).apply { max = 190; progress = (ink.penWidth*10-10).toInt().coerceIn(0,190) }; box.addView(size)
+        fun describe() { label.text = "粗细：${(size.progress+10)/10f}" }; describe()
+        size.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?,value: Int,fromUser: Boolean) { describe() }
+            override fun onStartTrackingTouch(bar: SeekBar?) {}
+            override fun onStopTrackingTouch(bar: SeekBar?) {}
+        })
+        AlertDialog.Builder(this).setTitle("笔刷").setView(box).setNegativeButton("取消",null).setPositiveButton("使用") { _,_ ->
+            ink.penColor = colors[color.selectedItemPosition]; ink.penWidth = (size.progress+10)/10f
+            prefs.edit().putFloat(if (ink.brushEngine == "vector") "handwriting_width" else "drawing_width",ink.penWidth).apply()
+            chooseTool(PaperInkView.Mode.WRITE)
+        }.show()
+    }
+    private fun showCanvasMenu() {
+        AlertDialog.Builder(this).setTitle("画布")
+            .setItems(arrayOf("导入 PDF","单指移动","修改生成内容","画布设置","操作说明","返回工作区")) { _,which ->
+                when(which) {
+                    0 -> if (!loading) startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "application/pdf"; addCategory(Intent.CATEGORY_OPENABLE) },51)
+                    1 -> { chooseTool(PaperInkView.Mode.MOVE); status.text = "单指拖动画布；也可随时双指移动。" }
+                    2 -> editGeneratedContent()
+                    3 -> {
+                        val toggle = Switch(this).apply { text = "仅笔写画（双指仍可导航）"; isChecked = ink.stylusOnly }
+                        AlertDialog.Builder(this).setTitle("画布设置").setView(toggle).setNegativeButton("取消",null).setPositiveButton("保存") { _,_ ->
+                            ink.stylusOnly = toggle.isChecked; prefs.edit().putBoolean("paper_stylus_only",toggle.isChecked).apply()
+                        }.show()
+                    }
+                    4 -> AlertDialog.Builder(this).setTitle("操作说明").setMessage("手写与绘画共用当前工作区、页面和笔迹；模式只改变接下来的笔刷。\n双指捏合缩放、双指拖动画布；居中恢复整页视图。\n框选后选择“选区”再发送；再次点框选或在框选模式下轻点纸面可取消。\n橡皮蓝圈表示范围，擦掉整条笔迹；一趟擦除可一次撤销。\n发送范围可选整页、选区、仅文字。指令预设与系统提示词都能编辑。\n默认手动发送；自动识别开启后才会停笔处理。\n修改生成内容可直接编辑文字、留白、图形参数并另存版本。\n识别与批改记录在工作区中查看。")
+                        .setPositiveButton("关闭",null).show()
+                    5 -> finish()
+                }
+            }.show()
+    }
     private fun editGeneratedContent() {
         if (loading || submitting || studyJob?.isActive == true) { status.text = "请等待当前操作完成后修改内容。"; return }
         val workspace = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id } }
         val source = sourcePath
         if (workspace == null || source == null) { status.text = "当前是导入的 PDF，可直接批注；请打开 AI 或 MCP 生成页以修改其内容。"; return }
+        interactionVersion++; handler.removeCallbacks(recognizeLater)
         val originalDocument = document
         io.execute {
             try {
@@ -328,7 +417,7 @@ class PaperActivity : Activity() {
                                 val turn = LearningTurn.prepare(workspace, "手动修改生成内容", source, "用户直接编辑")
                                 turn.publishEdited(edited) { input, output -> LearningPageRenderer.render(input, output, true) }
                                 runOnUiThread { if (!destroyed) {
-                                    readyPdf = turn.pdf
+                                    readyPdf = turn.pdf; generatedButton.visibility = android.view.View.VISIBLE
                                     if (document == originalDocument && ink.page.revision == revision && interactionVersion == version)
                                         openGenerated(turn.pdf, workspace.id, LearningTurn.sourcePath(turn.pdf))
                                     else status.text = "修改已保存；点查看生成页打开，当前笔迹保留。"
@@ -347,6 +436,7 @@ class PaperActivity : Activity() {
         val source = sourcePath
         val id = document; val index = pageIndex; val revision = ink.page.revision; val version = interactionVersion
         handler.removeCallbacks(recognizeLater)
+        stopped = false
         studyJob = scope.launch {
             try {
                 status.text = "正在理解并完成需求……可继续书写。"
@@ -373,18 +463,21 @@ class PaperActivity : Activity() {
                         } }
                     } finally { runtime.close(); studyRuntime = null }
                 }
-                readyPdf = pdf
+                if (stopped) return@launch
+                readyPdf = pdf; generatedButton.visibility = android.view.View.VISIBLE
                 if (document == id && pageIndex == index && ink.page.revision == revision && interactionVersion == version) {
                     openGenerated(pdf, workspace.id, LearningTurn.sourcePath(pdf))
                 } else status.text = "新学习页已生成。你正在书写，点“查看生成页”再打开。"
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { status.text = "本轮未完成：${e.message?.take(160)}。原页和笔迹已保留。" }
             finally {
+                handler.post { if (!destroyed) updateBusy() }
                 // Do not submit ink from an old page to the newly generated page.
                 if (!destroyed && !loading && autoRecognize && document == id && pageIndex == index && ink.page.revision != revision)
                     handler.postDelayed(recognizeLater, 1800)
             }
         }
+        updateBusy()
     }
     private fun message(text: String) = runOnUiThread { if (!destroyed) status.text = text }
     override fun onDestroy() {
@@ -395,8 +488,5 @@ class PaperActivity : Activity() {
         io.execute { renderer?.close(); renderer = null }
         ai.shutdown()
         ink.release(); super.onDestroy()
-    }
-    companion object {
-        private const val RECOGNIZE = "请直接识别图中可见的文字、手写和图形关系，按原布局顺序转写。不要解答题目。看不清的位置标记[不清晰]，不补写内容。"
     }
 }

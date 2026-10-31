@@ -30,7 +30,7 @@ data class PaperPage(val width: Int, val height: Int, val revision: Long, val st
                     val x = p.getDouble(0).toFloat(); val y = p.getDouble(1).toFloat(); val pressure = p.getDouble(2).toFloat()
                     require(x.isFinite() && y.isFinite() && pressure.isFinite() && x in 0f..width.toFloat() && y in 0f..height.toFloat())
                     InkPoint(x, y, pressure, p.getLong(3))
-                }, penWidth, stroke.optInt("color", -16777216), stroke.optString("engine", "vector").also { require(it in setOf("vector", "drawpile-classic-v1")) })
+                }, penWidth, stroke.optInt("color", -16777216), stroke.optString("engine", "vector").also { require(it in setOf("vector", "drawpile-classic-v1", "drawdance-v1")) })
             })
         }
     }

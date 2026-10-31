@@ -50,7 +50,7 @@ object NativeAgentHost {
             }).modelConcurrency(1).modelRetry(maxAttempts = 1)
             .loopBudget(maxModelRounds = 20, maxToolCallsPerRun = 40, maxWallClockMillis = 240000)
             .nativeWebFetchEnabled(false)
-            .systemPrompt("你在 WE（Write Everything）的 Android 工作区中。用中文工作。按需读取 Skill 原文和参考资料。使用 /memory/pages/ 作为学习内容和 Skill 输出的持久根目录，保留相对目录结构；/scratch/ 仅用于临时数据。根据用户反馈继续推进；版面应适合手写，预留书写空间。未经用户要求不改变原文件。不要声称完成尚未调用的工具或尚未保存的内容。")
+            .systemPrompt(com.opc.baize.paper.PaperPrompts.system(context))
         if (workspace.transcript.isFile) builder.runContext("上次保存的工作区对话：\n" + workspace.transcript.readText().takeLast(48000))
         val servers = JSONArray(mcpJson)
         for (i in 0 until servers.length()) {

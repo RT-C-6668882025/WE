@@ -385,8 +385,8 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; homeInputs = inputs
         fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; setOnClickListener { action() } }) }
-        inputButton("手写") { android.widget.Toast.makeText(this, "直接在首页书写；生成的学习页也可直接落笔。", android.widget.Toast.LENGTH_SHORT).show() }
-        inputButton("绘画") { if (canSwitchTask()) openDrawingPage() }
+        inputButton("手写") { if (canSwitchTask()) openWorkspaceCanvas(false) }
+        inputButton("绘画") { if (canSwitchTask()) openWorkspaceCanvas(true) }
         inputButton("打字") {
             if (canSwitchTask()) {
                 val editor = android.widget.EditText(this).apply { hint = "写下需求"; minLines = 2 }
@@ -567,6 +567,7 @@ class MainActivity : Activity() {
 
     /** 单次轮询 tick：读指纹 → 判定 → 驱动快刷 / 触发提交。全程 UI 线程。 */
     private fun pollTickHw(layer: HwHandwritingLayer) {
+        if (!prefs.getBoolean("home_auto_recognize",false)) return
         // 提交处理期间（识别+回复几秒）暂停判停笔，避免重复触发。
         if (submitInFlight) return
 
@@ -606,6 +607,7 @@ class MainActivity : Activity() {
     // ---------- 停笔计时（自动提交，非直写老路；延迟档位与直写模式共用 idle_ms 偏好） ----------
 
     private fun startIdleTimer() {
+        if (!prefs.getBoolean("home_auto_recognize",false)) return
         cancelIdleTimer()
         val r = Runnable {
             idleRunnable = null
@@ -1419,7 +1421,7 @@ class MainActivity : Activity() {
                     if (!canSwitchTask()) return@setOnClickListener
                     val target = session ?: Session(files.sessionId(workspace) ?: "w_${workspace.id}", System.currentTimeMillis(), emptyList())
                     files.attachSession(workspace, target.id); files.manage(workspace, "open")
-                    openHistorySession(target); panelDialog?.dismiss()
+                    openHistorySession(target); panelDialog?.dismiss(); openWorkspaceCanvas(prefs.getBoolean("paper_drawing_${workspace.id}",false),workspace)
             }
             row.addView(info, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(android.widget.Button(this).apply {
@@ -1473,7 +1475,7 @@ class MainActivity : Activity() {
         val management = WorkspaceFiles(this).state(workspace)
         AlertDialog.Builder(this).setTitle(workspace.name)
             .setItems(arrayOf("打开最近学习页", "导入 PDF", "查看文件", "重命名", "移到回收站",
-                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档")) { _, which ->
+                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档", "识别与批改记录")) { _, which ->
                 when (which) {
                     0 -> {
                         val pdf = LearningTurn.latestReady(workspace)
@@ -1491,6 +1493,17 @@ class MainActivity : Activity() {
                     4 -> manageWorkspaces(listOf(workspace), "trash")
                     5 -> manageWorkspaces(listOf(workspace), if (management.pinned) "unpin" else "pin")
                     6 -> manageWorkspaces(listOf(workspace), if (management.archived) "unarchive" else "archive")
+                    7 -> worker.execute {
+                        try {
+                            val records = com.opc.baize.paper.PaperRepository(this).workspaceResults(this,workspace.id)
+                            ui.post {
+                                AlertDialog.Builder(this).setTitle("${workspace.name} · 识别与批改记录")
+                                    .setItems(records.map { "第 ${it.getInt("page")+1} 页 · ${java.util.Date(it.getLong("createdAt"))}" }.toTypedArray()) { _,index ->
+                                        AlertDialog.Builder(this).setTitle("记录").setMessage(records[index].getString("answer")).setPositiveButton("关闭",null).show()
+                                    }.setNegativeButton("关闭",null).show()
+                            }
+                        } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this,e.message,android.widget.Toast.LENGTH_LONG).show() } }
+                    }
                     3 -> {
                         val editor = android.widget.EditText(this).apply { setText(workspace.name) }
                         AlertDialog.Builder(this).setTitle("工作区名称").setView(editor).setNegativeButton("取消", null)
@@ -1516,23 +1529,35 @@ class MainActivity : Activity() {
                     File(workspace.root, "memory/pages/paper-${java.util.UUID.randomUUID()}.pdf").also { LearningPageRenderer.render(source, it, true) }
                 val drawing = LearningPageRenderer.pageMap(pdf, 0)?.optString("mode") == "drawing"
                 ui.post { startActivity(android.content.Intent(this, com.opc.baize.paper.PaperActivity::class.java)
-                    .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.path).putExtra("autoStudy", !drawing)
+                    .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.path).putExtra("autoStudy", false)
                     .putExtra("entryMode", if (drawing) "drawing" else "handwriting")
                     .putExtra("sourcePath", if (source.extension.lowercase() == "pdf") LearningTurn.sourcePath(source) else "/" + source.relativeTo(workspace.root).path)) }
             } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this, e.message, android.widget.Toast.LENGTH_LONG).show() } }
         }
     }
-    private fun openDrawingPage() {
+    private fun openWorkspaceCanvas(drawing: Boolean, selected: WeWorkspace? = null) {
         val session = Session(curSessionId, curSessionTs, curTurns.toList())
         worker.execute {
             try {
-                val workspace = WorkspaceFiles(this).forSession(session)
-                val page = org.json.JSONObject().put("we_page", 1).put("mode", "drawing")
-                    .put("blocks", org.json.JSONArray().put(org.json.JSONObject().put("id", "canvas").put("type", "drawing").put("height", 500).put("grid", "blank")))
-                val turn = LearningTurn.prepare(workspace, "自由绘画", origin = "绘画模式")
-                turn.publishExternal(page.toString()) { source, pdf -> LearningPageRenderer.render(source, pdf, true) }
-                ui.post { openWorkspaceFile(workspace, turn.pdf) }
-            } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this, "绘画页创建失败：${e.message}", android.widget.Toast.LENGTH_LONG).show() } }
+                val workspace = selected ?: WorkspaceFiles(this).forSession(session)
+                val generated = LearningTurn.latestReady(workspace)
+                val saved = prefs.getString("paper_last_pdf_${workspace.id}",null)?.let { File(it).canonicalFile }
+                    ?.takeIf { it.isFile && it.path.startsWith(workspace.root.canonicalPath + "/memory/pages/") }
+                val latest = listOfNotNull(generated,saved).maxByOrNull { it.lastModified() }
+                if (latest != null) {
+                    ui.post { startActivity(android.content.Intent(this,com.opc.baize.paper.PaperActivity::class.java)
+                        .putExtra("workspace",workspace.id).putExtra("generatedPdf",latest.path)
+                        .putExtra("sourcePath",LearningTurn.sourcePath(latest)).putExtra("entryMode",if (drawing) "drawing" else "handwriting")) }
+                } else {
+                    val page = org.json.JSONObject().put("we_page",1).put("mode",if (drawing) "drawing" else "handwriting")
+                        .put("blocks",org.json.JSONArray().put(org.json.JSONObject().put("id","canvas").put("type","drawing").put("height",500).put("grid","blank")))
+                    val turn = LearningTurn.prepare(workspace,"空白工作区画布",origin = "用户新建画布")
+                    turn.publishExternal(page.toString()) { source,pdf -> LearningPageRenderer.render(source,pdf,true) }
+                    ui.post { startActivity(android.content.Intent(this,com.opc.baize.paper.PaperActivity::class.java)
+                        .putExtra("workspace",workspace.id).putExtra("generatedPdf",turn.pdf.path)
+                        .putExtra("sourcePath",LearningTurn.sourcePath(turn.pdf)).putExtra("entryMode",if (drawing) "drawing" else "handwriting")) }
+                }
+            } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this,"画布打开失败：${e.message}",android.widget.Toast.LENGTH_LONG).show() } }
         }
     }
     @Deprecated("Platform callback")

@@ -89,7 +89,7 @@ class PaperInkView(context: Context) : View(context) {
         canvas.clipRect(0f, 0f, page.width.toFloat(), page.height.toFloat())
         canvas.drawColor(Color.WHITE)
         image?.let { canvas.drawBitmap(it, null, RectF(0f, 0f, page.width.toFloat(), page.height.toFloat()), null) }
-        strokes(canvas, page); drawStroke(canvas, PaperStroke(current, penWidth, penColor, brushEngine))
+        strokes(canvas, page); drawStroke(canvas, PaperStroke(current.toList(), penWidth, penColor, brushEngine))
         region?.let { pen.color = Color.DKGRAY; pen.strokeWidth = 1f / t.scale; canvas.drawRect(it, pen) }
         if (mode == Mode.ERASE) eraserPosition?.let { point ->
             cursorPaint.style = Paint.Style.FILL; cursorPaint.color = 0x3371A6FF

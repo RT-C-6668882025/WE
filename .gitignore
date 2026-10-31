@@ -10,3 +10,6 @@ local.properties
 .kotlin/
 data/
 mcp/data/
+
+# Reproducible upstream native dependencies; fetched at pinned commits.
+/vendor/

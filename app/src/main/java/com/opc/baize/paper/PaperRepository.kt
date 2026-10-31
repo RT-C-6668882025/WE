@@ -60,6 +60,14 @@ class PaperRepository(context: Context) : PaperStore {
         .filter { it.name.startsWith("result-") && it.name.endsWith(".json") }
         .map { AtomicFile(it).openRead().bufferedReader().use { reader -> JSONObject(reader.readText()) } }
         .filter { it.getInt("page") == page }.sortedByDescending { it.getLong("createdAt") }.take(20) }
+    fun workspaceResults(context: Context, workspace: String): List<JSONObject> = synchronized(lock) {
+        context.getSharedPreferences("moling",Context.MODE_PRIVATE).all.entries
+            .filter { it.key.startsWith("paper_workspace_") && it.value == workspace }
+            .map { it.key.removePrefix("paper_workspace_") }.filter { it.matches(Regex("[0-9a-f]{64}")) }
+            .flatMap { id -> directory(id).listFiles().orEmpty().filter { it.name.startsWith("result-") && it.extension == "json" }
+                .map { AtomicFile(it).openRead().bufferedReader().use { reader -> JSONObject(reader.readText()) } } }
+            .sortedByDescending { it.getLong("createdAt") }.take(100)
+    }
     private fun write(file: File, text: String) = synchronized(lock) {
         val atomic = AtomicFile(file); val out = atomic.startWrite()
         try { out.write(text.toByteArray(Charsets.UTF_8)); atomic.finishWrite(out) }

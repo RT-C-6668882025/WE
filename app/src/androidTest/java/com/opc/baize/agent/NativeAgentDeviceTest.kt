@@ -120,6 +120,28 @@ class NativeAgentDeviceTest {
             org.junit.Assert.assertTrue(android.graphics.Color.blue(bitmap.getPixel(95,40)) > 200)
         } finally { bitmap.recycle(); replay.recycle() }
     }
+    @Test fun drawdanceCanvasPipelineRendersPressureAndRestoresSavedStrokes() {
+        val points = listOf(
+            com.opc.baize.paper.InkPoint(30f, 40f, 0.1f, 0),
+            com.opc.baize.paper.InkPoint(100f, 40f, 1f, 100)
+        )
+        val stroke = com.opc.baize.paper.PaperStroke(points, 20f, android.graphics.Color.BLUE, com.opc.baize.paper.DrawdanceBrush.ENGINE)
+        val page = com.opc.baize.paper.PaperPage(140, 80, 1, listOf(stroke))
+        val restored = com.opc.baize.paper.PaperPage.decode(page.encode())
+        org.junit.Assert.assertEquals(stroke, restored.strokes.single())
+        val bitmap = android.graphics.Bitmap.createBitmap(140, 80, android.graphics.Bitmap.Config.ARGB_8888)
+        val replay = android.graphics.Bitmap.createBitmap(140, 80, android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            com.opc.baize.paper.PaperStrokeRenderer.draw(android.graphics.Canvas(bitmap), stroke)
+            com.opc.baize.paper.PaperStrokeRenderer.draw(android.graphics.Canvas(replay), restored.strokes.single())
+            org.junit.Assert.assertTrue(bitmap.sameAs(replay))
+            org.junit.Assert.assertTrue(android.graphics.Color.alpha(bitmap.getPixel(100, 40)) > 0)
+            org.junit.Assert.assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(10, 10)))
+            fun coverage(x: Int) = (0 until 80).count { android.graphics.Color.alpha(bitmap.getPixel(x, it)) > 10 }
+            org.junit.Assert.assertTrue("pressure increases brush width", coverage(95) > coverage(32))
+            org.junit.Assert.assertTrue(android.graphics.Color.blue(bitmap.getPixel(95,40)) > 200)
+        } finally { bitmap.recycle(); replay.recycle() }
+    }
     @Test fun feedbackGeneratesANewPaperAndPreservesOriginalInk() = LearningLoopContract.verify(InstrumentationRegistry.getInstrumentation().targetContext)
     @Test fun skillMcpAndWorkspaceRunInTheAppProcess() = NativeRuntimeContract.verify(InstrumentationRegistry.getInstrumentation().targetContext)
     @Test fun generatedLearningPaperPaginatesAndRestoresVectors() {
@@ -187,6 +209,16 @@ class NativeAgentDeviceTest {
                 }
                 org.junit.Assert.assertEquals(1L, view.page.revision)
                 org.junit.Assert.assertEquals(1, view.page.strokes.size)
+                val original = view.page
+                val workspacesBefore = WorkspaceFiles(context).list().map { it.id }.toSet()
+                val switch = com.opc.baize.paper.PaperActivity::class.java.getDeclaredMethod("setInputMode", java.lang.Boolean.TYPE).apply { isAccessible = true }
+                switch.invoke(activity,true)
+                org.junit.Assert.assertEquals(com.opc.baize.paper.DrawdanceBrush.ENGINE,view.brushEngine)
+                org.junit.Assert.assertEquals(original,view.page)
+                switch.invoke(activity,false)
+                org.junit.Assert.assertEquals("vector",view.brushEngine)
+                org.junit.Assert.assertEquals(original,view.page)
+                org.junit.Assert.assertEquals(workspacesBefore,WorkspaceFiles(context).list().map { it.id }.toSet())
             }
             com.opc.baize.paper.PaperIo.executor.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
             val repository = com.opc.baize.paper.PaperRepository(context)

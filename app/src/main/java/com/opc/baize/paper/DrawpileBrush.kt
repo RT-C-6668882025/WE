@@ -40,6 +40,7 @@ object DrawpileBrush {
 /** Shared by the editor snapshot and MCP so feedback uses identical ink. */
 object PaperStrokeRenderer {
     fun draw(canvas: Canvas, stroke: PaperStroke) {
+        if (stroke.engine == DrawdanceBrush.ENGINE) { DrawdanceBrush.draw(canvas, stroke); return }
         if (stroke.engine == DrawpileBrush.ENGINE) { DrawpileBrush.draw(canvas, stroke); return }
         if (stroke.points.isEmpty()) return
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
