@@ -13,7 +13,9 @@ import java.util.UUID
 
 /** Real runtime tools and renderer, deterministic model; never uses account credentials. */
 object LearningLoopContract {
-    fun verify(context: Context) = runBlocking {
+    fun verify(context: Context,
+        render: (File, File) -> Unit = { source, output -> LearningPageRenderer.render(source, output, true) },
+        validatePdf: Boolean = true) = runBlocking {
         val workspace = WorkspaceFiles(context).create("loop-${UUID.randomUUID()}")
         try {
             suspend fun generate(turn: LearningTurn, content: String, previous: String? = null, omitFile: Boolean = false): File {
@@ -28,12 +30,12 @@ object LearningLoopContract {
                         }
                         add("finish" to JSONObject().put("response", "LEARNING_DONE").toString())
                     }
-                    if (previous != null && round > 0) assertTrue(input.contains("FIRST_LESSON"))
+                    if (previous != null && round > 0) assertTrue("Previous lesson was not read: $input", input.contains("FIRST_LESSON"))
                     val (name, args) = actions[round++]
-                    val call = JSONObject().put("type", "function_call").put("id", "fc_$round").put("call_id", "call_$round")
+                    val call = JSONObject().put("type", "function_call").put("id", "fc_${turn.id}_$round").put("call_id", "call_${turn.id}_$round")
                         .put("name", name).put("arguments", args).put("status", "completed")
                     val completed = JSONObject().put("type", "response.completed").put("response", JSONObject()
-                        .put("id", "resp_$round").put("status", "completed").put("output", JSONArray().put(call)))
+                        .put("id", "resp_${turn.id}_$round").put("status", "completed").put("output", JSONArray().put(call)))
                     "data: " + JSONObject().put("type", "response.output_item.added").put("output_index", 0).put("item", call) + "\n\n" +
                         "data: " + JSONObject().put("type", "response.output_item.done").put("output_index", 0).put("item", call) + "\n\n" +
                         "data: $completed\n\n"
@@ -41,7 +43,7 @@ object LearningLoopContract {
                 val client = OpenAiModelClient({ "test-placeholder" }, model = "fixture", endpoint = "responses", stream = true,
                     serverSideSearch = false, transport = transport)
                 val runtime = NativeAgentHost.buildWithClient(context, workspace, client, "[]")
-                return try { turn.execute(runtime) } finally { runtime.close() }
+                return try { turn.execute(runtime, render = render) } finally { runtime.close() }
             }
             val first = LearningTurn.prepare(workspace, "帮我练英语时态")
             val firstPdf = generate(first, "FIRST_LESSON\nFill in: He ___ yesterday.\n请在下面作答。")
@@ -58,7 +60,7 @@ object LearningLoopContract {
             assertNotEquals(firstPdf, secondPdf)
             assertArrayEquals(oldPdfBytes, firstPdf.readBytes())
             assertEquals(ink, repository.load(oldId, 0, 600, 840))
-            AndroidPdfEngine(secondPdf).use { assertTrue(it.pageCount >= 1) }
+            if (validatePdf) AndroidPdfEngine(secondPdf).use { assertTrue(it.pageCount >= 1) }
             assertEquals(secondPdf, LearningTurn.latestReady(workspace))
             assertTrue(workspace.transcript.readText().contains("went"))
             val missing = LearningTurn.prepare(workspace, "Do not pretend an unsaved answer is a page")

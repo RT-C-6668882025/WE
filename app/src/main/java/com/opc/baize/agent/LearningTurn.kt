@@ -27,7 +27,9 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
         不要只在聊天里回答，也不要让用户自行找文件或排版。
     """.trimIndent()
 
-    suspend fun execute(runtime: AgentRuntime, onEvent: suspend (AgentEvent) -> Unit = {}): File {
+    suspend fun execute(runtime: AgentRuntime,
+        render: (File, File) -> Unit = { source, output -> LearningPageRenderer.render(source, output, true) },
+        onEvent: suspend (AgentEvent) -> Unit = {}): File {
         require(record.getString("state") == "prepared") { "此任务已执行；请从保存的结果继续，避免重复调用。" }
         update("running")
         try {
@@ -46,7 +48,7 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
             }
             check(completed) { "Agent 已停止，尚未完成页面。" }
             require(source.isFile && source.length() in 1L..256000L && source.readText().isNotBlank()) { "Agent 尚未保存学习页，原页已保留。" }
-            LearningPageRenderer.render(source, pdf, true)
+            render(source, pdf)
             val previous = workspace.transcript.takeIf(File::isFile)?.readText().orEmpty()
             write(workspace.transcript, (previous + "\n你：${record.getString("request")}\nWE：$answer\n页面：/memory/pages/${source.name}\n").takeLast(256000))
             update("ready")
@@ -72,7 +74,9 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
                 if (record.getString("state") != "ready") null else {
                     val id = file.nameWithoutExtension
                     require(UUID.fromString(id).toString() == id)
-                    record.getLong("createdAt") to File(workspace.root, "memory/pages/turn-$id.pdf").takeIf(File::isFile)
+                    File(workspace.root, "memory/pages/turn-$id.pdf").takeIf(File::isFile)?.let {
+                        record.getLong("createdAt") to it
+                    }
                 }
             }.getOrNull() }.sortedByDescending { it.first }.firstOrNull()?.second
         fun sourcePath(pdf: File): String = "/memory/pages/${pdf.nameWithoutExtension}.md"

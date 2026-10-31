@@ -8,11 +8,13 @@ PaperActivity captures a submission's vectors, document/page/revision/region and
 
 If the user writes or changes pages while waiting, WE does not replace the visible paper. The result remains available through “查看生成页”; the original PDF and vectors are untouched. New ink can be recognized after the current task completes. The same page can receive typed requirements. Tool configuration is collapsed by default.
 
+The pinned runtime has a partial JSON decoder for native reads: a legal escaped slash in a path could fail with INVALID_WORKSPACE_PATH. NativeAgentHost now canonicalizes tool argument JSON at the ModelClient boundary. This preserves values while keeping the provider's original function-call items in the subscription checkpoint. The two-turn fixture uses escaped paths to cover this failure.
+
 Each turn records request, origin, source path, creation time and prepared/running/ready/interrupted status outside the agent workspace. Ready papers can be reopened after restarting the app. Interrupted runs are not automatically replayed; this avoids repeating external MCP effects. This is activity-owned execution: closing the activity cancels the active generation; it is not a durable background worker. Recognition already submitted may finish storing its captured result.
 
 ## Verification boundary
 
-LearningLoopContract runs the actual pinned Android agent runtime, file tools, subscription request serializer and PDF renderer against a deterministic synthetic model. It exercises two turns, source reads, new page creation, original ink preservation, ready recovery and rejection of a completed response with no saved page. It does not test a real account, vision accuracy or Android background survival. Existing instrumentation also opens the paper and persists touch ink.
+LearningLoopContract runs the actual pinned Android agent runtime, file tools and subscription request serializer against a deterministic synthetic model. Android instrumentation uses the actual PDF renderer. The JVM contract injects a deterministic artifact writer because Robolectric 4.13 does not implement PdfDocument/PdfRenderer. It exercises two turns, source reads, new page creation, original ink preservation, ready recovery and rejection of a completed response with no saved page. It does not test a real account, vision accuracy or Android background survival. Existing instrumentation also opens the paper and persists touch ink.
 
 This version generates text learning papers, not a rich graphical scene editor. Vision is a separate first stage whose text feeds the agent. Ambiguous recognition must lead to a clarification on the new page, not fabricated content. No Python/Node Skill execution has been added.
 
@@ -30,3 +32,11 @@ This version generates text learning papers, not a rich graphical scene editor. 
 The working integration continues to use cc.noharry:agent-runtime-android:0.3.0 (MIT), already embedded in WE and compatible with its subscription transport. Replacing it with DSH before validating the subscription adapter and runtime lifecycle would interrupt the working path. The immutable turn artifact contract can be reused by either engine.
 
 Next engine experiment should pin DSH Go and its runtime, demonstrate a local Android start, run a file/Skill/MCP task, then adapt a single model request through WE's existing gateway without exporting OAuth credentials into the guest environment. Passing a desktop Node experiment would not establish Android compatibility.
+
+## Verified on this change
+
+- `testDebugUnitTest`: 94 tests, 0 failures, 0 errors. Includes the two-turn real-runtime/file-tool contract with legal escaped JSON paths and a deterministic JVM artifact writer.
+- `lintDebug`, `assembleDebug`, `assembleDebugAndroidTest`: successful.
+- `tools/check-subscription-protocol.sh`: 88 checks passed with synthetic/offline fixtures.
+- New Android instrumentation contract compiles but has not been executed on a device in this session. No attached Android device or emulator was available. Physical subscription vision accuracy, pen feel and automatic page switching need device acceptance.
+- GitHub Actions did not expose a run for this branch during verification; the results above are from the local managed build environment. The PR stays a draft rather than claiming an Android instrumentation pass.
