@@ -31,7 +31,7 @@ class AgentWorkspaceActivity : Activity() {
         setContentView(ScrollView(this).apply { addView(root) })
         fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; root.addView(this) }
         label("WE 工作区", 26f)
-        label("导入 Skill，生成学习内容，打开手写页。书写、识别和下一轮生成保存在同一工作区。")
+        label("写下需求，自动生成可书写的页面；继续写、画或修改，Agent 接着完成。")
         choice = Spinner(this); root.addView(choice); controls += choice
         button(root, "新建工作区") {
             val name = EditText(this).apply { hint = "工作区名称" }
@@ -39,10 +39,13 @@ class AgentWorkspaceActivity : Activity() {
                 .setPositiveButton("创建") { _, _ -> safe { val created = files.create(name.text.toString()); reload(created.id) } }.show()
         }
         info = label("")
-        button(root, "导入 Skill 文件夹") {
+        val settings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
+        button(root, "工作区设置") { settings.visibility = if (settings.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE }
+        root.addView(settings)
+        button(settings, "导入 Skill 文件夹") {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), IMPORT_SKILL)
         }
-        button(root, "设置 MCP") {
+        button(settings, "设置 MCP") {
             val workspace = current()
             val editor = EditText(this).apply { setText(files.mcp(workspace)); minLines = 5; gravity = android.view.Gravity.TOP }
             AlertDialog.Builder(this).setTitle("公开 MCP（Streamable HTTP）")
@@ -51,12 +54,13 @@ class AgentWorkspaceActivity : Activity() {
                     files.saveMcp(workspace, editor.text.toString()); resetRuntime(); showInfo()
                 } }.show()
         }
-        button(root, "查看工作区文件 / 打开手写页") { showFiles() }
+        button(root, "继续上次学习") { LearningTurn.latestReady(current())?.let { openPaper(it, true) } ?: openPaper(null, true) }
+        button(settings, "查看工作区文件 / 打开手写页") { showFiles() }
         button(root, "新建空白手写页") { openPaper(null, true) }
         input = EditText(this).apply { hint = "写下目标，或指定要调用的 Skill"; minLines = 3; gravity = android.view.Gravity.TOP; textSize = 18f }
         root.addView(input); controls += input
-        button(root, "执行") { val text = input.text.toString().trim(); if (text.isNotEmpty()) run(text) }
-        button(root, "验证本机工具调用（使用订阅额度）") {
+        button(root, "开始") { val text = input.text.toString().trim(); if (text.isNotEmpty()) run(text) }
+        button(settings, "验证本机工具调用（使用订阅额度）") {
             run("请使用工作区文件工具创建 /memory/pages/we-native-probe-${System.currentTimeMillis()}.md，内容为 WE_NATIVE_OK；然后用读取工具读取该文件，最后报告读取结果。必须实际调用工具。")
         }
         root.addView(Button(this).apply { text = "停止当前任务"; setOnClickListener { job?.cancel(); output.append("\n已请求停止。") } })
@@ -103,29 +107,23 @@ class AgentWorkspaceActivity : Activity() {
                     runtimeWorkspace = workspace.id + model
                 }
                 val owner = requireNotNull(runtime)
-                owner.run(AgentRequest(UUID.randomUUID().toString(), workspace.id, text)).collect { event ->
-                    when (event) {
-                        is AgentEvent.TextDelta -> { answer.append(event.text); output.append(event.text) }
-                        is AgentEvent.ResultAvailable -> if (event.result.response.isNotBlank() && event.result.response != answer.toString()) {
-                            if (answer.isNotEmpty()) output.append("\n")
-                            answer.clear(); answer.append(event.result.response); output.append(event.result.response)
+                val turn = withContext(Dispatchers.IO) { LearningTurn.prepare(workspace, text) }
+                val pdf = withContext(Dispatchers.IO) {
+                    turn.execute(owner) { event -> withContext(Dispatchers.Main) {
+                        when (event) {
+                            is AgentEvent.TextDelta -> { answer.append(event.text); output.append(event.text) }
+                            is AgentEvent.ResultAvailable -> output.append("\n" + event.result.response)
+                            is AgentEvent.NativeToolCallStarted -> {
+                                lastTool = event.toolName + "\n" + event.arguments.take(2000)
+                                info.text = "正在完成需求……"
+                            }
+                            is AgentEvent.ConfirmationRequired -> confirm(owner, event.pending, lastTool)
+                            else -> Unit
                         }
-                        is AgentEvent.NativeToolCallStarted -> {
-                            lastTool = event.toolName + "\n" + event.arguments.take(2000)
-                            output.append("\n[${event.toolName}]\n")
-                        }
-                        is AgentEvent.ConfirmationRequired -> confirm(owner, event.pending, lastTool)
-                        is AgentEvent.Failed -> { output.append("\n任务未完成：${event.code}"); error(event.code) }
-                        else -> Unit
-                    }
+                    } }
                 }
-                withContext(Dispatchers.IO) {
-                    val previous = workspace.transcript.takeIf { it.isFile }?.readText().orEmpty()
-                    val atomic = android.util.AtomicFile(workspace.transcript); val out = atomic.startWrite()
-                    try { out.write((previous + "\n你：$text\nWE：$answer\n").takeLast(256000).toByteArray()); atomic.finishWrite(out) }
-                    catch (e: Exception) { atomic.failWrite(out); throw e }
-                }
-                output.append("\n")
+                resetRuntime()
+                openPaper(pdf, true)
             } catch (e: CancellationException) { resetRuntime(); throw e }
             catch (e: Exception) { output.append("\n未完成：${e.message?.take(160) ?: e.javaClass.simpleName}"); resetRuntime() }
             finally { controls.forEach { it.isEnabled = true } }
@@ -169,7 +167,10 @@ class AgentWorkspaceActivity : Activity() {
                         }
                 }
                 startActivity(Intent(this@AgentWorkspaceActivity, com.opc.baize.paper.PaperActivity::class.java)
-                    .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.absolutePath))
+                    .putExtra("workspace", workspace.id).putExtra("generatedPdf", pdf.absolutePath)
+                    .putExtra("sourcePath", source?.takeIf { it.extension == "pdf" }?.let { LearningTurn.sourcePath(it) }
+                        ?: source?.let { "/" + it.relativeTo(workspace.root).path })
+                    .putExtra("autoStudy", true))
             } catch (e: Exception) { output.append("\n打开学习页失败：${e.message}") }
             finally { controls.forEach { it.isEnabled = true } }
         }

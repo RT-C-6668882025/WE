@@ -7,6 +7,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NativeAgentDeviceTest {
+    @Test fun feedbackGeneratesANewPaperAndPreservesOriginalInk() = LearningLoopContract.verify(InstrumentationRegistry.getInstrumentation().targetContext)
     @Test fun skillMcpAndWorkspaceRunInTheAppProcess() = NativeRuntimeContract.verify(InstrumentationRegistry.getInstrumentation().targetContext)
     @Test fun generatedLearningPaperPaginatesAndRestoresVectors() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

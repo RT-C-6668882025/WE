@@ -1,7 +1,8 @@
 name: Android native agent
 on:
   push:
-    branches: ["feat/android-native-agent"]
+    branches: ["main", "feat/android-native-agent", "feat/continuous-learning-paper"]
+  workflow_dispatch:
   pull_request:
     paths: ["app/**", ".github/workflows/native-agent.yml"]
 permissions:
@@ -13,7 +14,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Cancel superseded native builds
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/android-native-agent'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -65,7 +66,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/android-native-agent'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs: android
     permissions:
       contents: write
@@ -79,11 +80,11 @@ jobs:
       - name: Download the tested APK from this exact run
         run: |
           gh run download "$GITHUB_RUN_ID" --name we-android-native-agent-apk --dir apk
-          mv apk/app-debug.apk apk/WE-v0.4.0-preview.apk
+          mv apk/app-debug.apk apk/WE-v0.4.1-preview.apk
           cd apk
-          sha256sum WE-v0.4.0-preview.apk > SHA256SUMS.txt
+          sha256sum WE-v0.4.1-preview.apk > SHA256SUMS.txt
       - name: Publish WE preview
         run: |
-          test "$(gh api "repos/$GH_REPO/git/ref/heads/feat/android-native-agent" --jq .object.sha)" = "$GITHUB_SHA"
-          gh release create v0.4.0-we-preview apk/WE-v0.4.0-preview.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "WE v0.4.0 Preview" --notes-file docs/releases/v0.4.0.md
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+          gh release create v0.4.1-we-preview apk/WE-v0.4.1-preview.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "WE v0.4.1 Preview" --notes-file docs/releases/v0.4.1.md
