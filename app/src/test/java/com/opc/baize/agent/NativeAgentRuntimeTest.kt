@@ -9,5 +9,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30])
 class NativeAgentRuntimeTest {
+    @Test fun feedbackGeneratesANewPaperAndPreservesOriginalInk() = LearningLoopContract.verify(RuntimeEnvironment.getApplication())
     @Test fun skillMcpAndWorkspaceRunInsideAndroid() = NativeRuntimeContract.verify(RuntimeEnvironment.getApplication())
 }
