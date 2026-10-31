@@ -70,11 +70,10 @@ object LearningPageRenderer {
             return
         }
         c.drawRoundRect(RectF(r.x.toFloat(), r.y.toFloat(), (r.x + r.width).toFloat(), (r.y + r.height).toFloat()), 6f, 6f, pen)
-        val labelHeight = if (r.text.isNotBlank()) 30 else 8
-        if (r.text.isNotBlank()) {
-            val label = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 14f; color = Color.GRAY }
-            c.drawText(r.text.take(80), r.x + 10f, r.y + 21f, label)
-        }
+        val caption = r.text.takeIf { it.isNotBlank() }?.let { textLayout(it, r.width - 20, 14, 22) }
+        val labelHeight = caption?.height?.plus(16) ?: 8
+        require(labelHeight + 40 <= r.height) { "区域说明过长或区域过小，请增加 height 或把说明放在 text 块中" }
+        if (caption != null) { c.save(); c.translate(r.x + 10f, r.y + 8f); caption.draw(c); c.restore() }
         if (r.grid != "blank") {
             val step = if (r.grid == "ruled") r.lineHeight.coerceAtLeast(36) else 24
             var y = r.y + labelHeight + step
