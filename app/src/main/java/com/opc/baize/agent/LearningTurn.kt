@@ -62,14 +62,16 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
 
     private fun update(state: String) { record.put("state", state); write(journal, record.toString()) }
     /** External Agent supplies content; it never needs access to subscription credentials. */
-    fun publishExternal(text: String, render: (File, File) -> Unit) {
+    fun publishExternal(text: String, render: (File, File) -> Unit) = publishContent(text, "外部 Agent", render)
+    fun publishEdited(text: String, render: (File, File) -> Unit) = publishContent(text, "你（编辑）", render)
+    private fun publishContent(text: String, author: String, render: (File, File) -> Unit) {
         require(record.getString("state") == "prepared")
         update("running")
         try {
             write(source, text); render(source, pdf)
             require(pdf.isFile && pdf.length() > 0) { "Page rendering failed" }
             val previous = workspace.transcript.takeIf(File::isFile)?.readText().orEmpty()
-            write(workspace.transcript, (previous + "\n你：${record.getString("request")}\n外部 Agent：已生成学习页\n页面：/memory/pages/${source.name}\n").takeLast(256000))
+            write(workspace.transcript, (previous + "\n你：${record.getString("request")}\n$author：已生成学习页\n页面：/memory/pages/${source.name}\n").takeLast(256000))
             update("ready")
         } catch (e: Exception) { update("interrupted"); throw e }
     }

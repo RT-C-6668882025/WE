@@ -19,6 +19,8 @@ class PaperInkView(context: Context) : View(context) {
     var penColor: Int = Color.BLACK
     var brushEngine = "vector"
     var penWidth: Float = 1.8f
+    val hasSelection: Boolean get() = region?.let { it.width() > 4 && it.height() > 4 } == true
+    fun clearSelection() { cancelInteraction(); region = null; selectionBefore = null; invalidate() }
     var toolFeedback: ((String) -> Unit)? = null
     var changed: ((PaperPage) -> Unit)? = null
     var strokeStarted: (() -> Unit)? = null
@@ -188,6 +190,7 @@ class PaperInkView(context: Context) : View(context) {
                     if (after != before) { commit(after); toolFeedback?.invoke("橡皮：已擦除 ${before.size - after.size} 条笔迹，可点撤销恢复。") }
                     else toolFeedback?.invoke("橡皮已启用：蓝色圆圈是擦除范围，拖过笔迹即可擦除。")
                 }; eraseBefore = null
+                if (mode == Mode.SELECT && !hasSelection) { region = null; toolFeedback?.invoke("已取消框选，当前范围为整页。") }
                 selecting = false; activePointer = -1; performClick()
                 if (e.actionMasked == MotionEvent.ACTION_POINTER_UP) gestureSequence = true
                 parent?.requestDisallowInterceptTouchEvent(false)

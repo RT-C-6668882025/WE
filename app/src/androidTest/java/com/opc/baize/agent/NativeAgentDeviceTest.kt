@@ -18,6 +18,30 @@ class NativeAgentDeviceTest {
             xy.size, properties, coordinates, 0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
         try { org.junit.Assert.assertTrue(view.onTouchEvent(event)) } finally { event.recycle() }
     }
+    @Test fun selectionCanBeCancelledWithoutChangingInk() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val view = com.opc.baize.paper.PaperInkView(instrumentation.targetContext)
+            view.layout(0,0,400,400)
+            view.load(android.graphics.Bitmap.createBitmap(200,200,android.graphics.Bitmap.Config.ARGB_8888),
+                com.opc.baize.paper.PaperPage(200,200,0,emptyList()))
+            fun bounds() = view.snapshot().let { snapshot -> snapshot.first.recycle(); snapshot.third }
+            try {
+                view.mode = com.opc.baize.paper.PaperInkView.Mode.SELECT
+                touch(view,0,40f to 40f); touch(view,2,120f to 120f); touch(view,1,120f to 120f)
+                org.junit.Assert.assertTrue(view.hasSelection)
+                org.junit.Assert.assertEquals(40f,bounds().width(),0.01f)
+                view.clearSelection()
+                org.junit.Assert.assertFalse(view.hasSelection)
+                org.junit.Assert.assertEquals(200f,bounds().width(),0.01f)
+                touch(view,0,40f to 40f); touch(view,2,120f to 120f); touch(view,1,120f to 120f)
+                touch(view,0,180f to 180f); touch(view,1,180f to 180f)
+                org.junit.Assert.assertFalse(view.hasSelection)
+                org.junit.Assert.assertEquals(200f,bounds().width(),0.01f)
+                org.junit.Assert.assertEquals(0L,view.page.revision)
+            } finally { view.release() }
+        }
+    }
     @Test fun pinchPanPreservesFocusAndNeverCommitsGestureInk() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {

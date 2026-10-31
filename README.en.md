@@ -6,7 +6,7 @@ WE is an Android handwriting and AI workspace application, built on [Moling](htt
 
 [Downloads](https://github.com/RT-C-6668882025/WE/releases) · [Release notes](docs/releases/) · [Issues](https://github.com/RT-C-6668882025/WE/issues) · [中文](README.md)
 
-Current source version: **v0.4.8 Preview**. See Releases for APKs actually available on GitHub.
+Current source version: **v0.4.9 Preview**. See Releases for APKs actually available on GitHub.
 
 ## The interface
 

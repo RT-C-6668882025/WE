@@ -95,17 +95,18 @@ class PaperActivity : Activity() {
         }
         modeButtons[PaperInkView.Mode.WRITE] = button(tools, "画笔") { selectTool(PaperInkView.Mode.WRITE); status.text = "画笔：在纸上写画；颜色、粗细在下方设置。" }
         modeButtons[PaperInkView.Mode.MOVE] = button(tools, "移动") { selectTool(PaperInkView.Mode.MOVE); status.text = "移动：单指拖动纸张；任何工具下都能双指拖动、捏合缩放。" }
-        modeButtons[PaperInkView.Mode.SELECT] = button(tools, "框选") { selectTool(PaperInkView.Mode.SELECT); status.text = "框选：拖出矩形，然后点识别、批改或解释；不会自动发送。" }
+        modeButtons[PaperInkView.Mode.SELECT] = button(tools, "框选") { if (ink.mode == PaperInkView.Mode.SELECT || ink.hasSelection) { ink.clearSelection(); selectTool(PaperInkView.Mode.WRITE); status.text = "已取消框选，当前范围为整页。" }
+            else { selectTool(PaperInkView.Mode.SELECT); status.text = "拖出矩形选区；再次点框选或轻点纸面可取消。" } }
         modeButtons[PaperInkView.Mode.ERASE] = button(tools, "橡皮") { selectTool(PaperInkView.Mode.ERASE); status.text = "橡皮已启用：蓝色圆圈是擦除范围，碰到整条笔迹即擦除；可撤销。" }
         selectTool(PaperInkView.Mode.WRITE)
         val navigation = row().apply { visibility = android.view.View.GONE }; extraTools += navigation
         button(navigation, "撤销") { if (!loading) ink.undo() }
         button(navigation, "缩小") { ink.zoom(0.8f) }
         button(navigation, "放大") { ink.zoom(1.25f) }
-        button(navigation, "复位") { ink.resetView(); status.text = "已恢复整页视图。" }
+        button(navigation, "整页居中") { ink.resetView(); status.text = "已恢复整页视图。" }
         button(navigation, "按钮说明") {
             AlertDialog.Builder(this).setTitle("绘画与学习 · 按钮说明")
-                .setMessage("画笔：在生成内容或 PDF 上自由写画。绘画入口使用 Drawpile 经典笔刷核心，压力改变粗细。\n手势：双指捏合缩放、双指拖动纸张，任何工具下都能用；松开后再落笔继续写画。\n移动：单指拖动纸张，不留下笔迹。\n框选：拖出矩形，限定随后识别、批改、解释的范围；不框选则处理整页。\n橡皮：按钮高亮、蓝色圆圈显示擦除范围；擦掉碰到的整条笔迹，底图保留。\n撤销：恢复上一次画笔或橡皮操作，最多 30 步；一趟连续擦除只需撤销一次。\n缩小 / 放大：只改变看纸的大小，不改变笔迹。\n复位：恢复整页大小和居中位置。\n笔迹颜色 / 笔触粗细：设置接下来画出的线；不改变已有笔迹。\n完成需求：发送输入框中的需求，让 AI 生成或修改页面。\n查看生成页：打开最新生成的学习页。\n识别选区 / 整页：识别纸上的文字、图和笔迹。\n局部批改 / 选区解释：让 AI 检查答案或解释内容。\n批改记录：查看本页之前的 AI 回复。\n停笔后自动继续：停笔约 1.8 秒后使用订阅理解反馈、继续学习；绘画默认关闭。\n仅笔书写：阻止手指写画、擦除和框选；仍能双指移动缩放，或用移动工具单指拖纸。\n停止：取消本机当前 AI 任务并关闭自动继续。\n导入 PDF / 上一页 / 下一页：切换文档或页面。笔迹自动保存，返回可退出。")
+                .setMessage("画笔：在生成内容或 PDF 上自由写画。绘画入口使用 Drawpile 经典笔刷核心，压力改变粗细。\n手势：双指捏合缩放、双指拖动纸张，任何工具下都能用；松开后再落笔继续写画。\n移动：单指拖动纸张，不留下笔迹。\n框选：拖出矩形限定 AI 范围；再次点框选或在框选工具下轻点纸面可取消。未框选时处理整页。\n橡皮：按钮高亮、蓝色圆圈显示擦除范围；擦掉碰到的整条笔迹，底图保留。\n撤销：恢复上一次画笔或橡皮操作，最多 30 步；一趟连续擦除只需撤销一次。\n缩小 / 放大：只改变看纸的大小，不改变笔迹。\n整页居中：恢复整页大小和居中位置。\n笔迹颜色 / 笔触粗细：设置接下来画出的线；不改变已有笔迹。\n修改内容：直接编辑生成页文字、留白、图形，保存为可继续写画的新版本。\n完成需求：发送输入框中的需求，让 AI 生成或修改页面。\n查看生成页：打开最新生成的学习页。\n识别选区 / 整页：识别纸上的文字、图和笔迹。\n局部批改 / 选区解释：让 AI 检查答案或解释内容。\n批改记录：查看本页之前的 AI 回复。\n停笔后自动继续：停笔约 1.8 秒后使用订阅理解反馈、继续学习；绘画默认关闭。\n仅笔书写：阻止手指写画、擦除和框选；仍能双指移动缩放，或用移动工具单指拖纸。\n停止：取消本机当前 AI 任务并关闭自动继续。\n导入 PDF / 上一页 / 下一页：切换文档或页面。笔迹自动保存，返回可退出。")
                 .setPositiveButton("明白了", null).show()
         }
         val pens = row().apply { visibility = android.view.View.GONE }; extraTools += pens
@@ -113,6 +114,7 @@ class PaperActivity : Activity() {
             val colors = intArrayOf(Color.BLACK, Color.rgb(25, 85, 175), Color.rgb(190, 40, 40), Color.rgb(35, 125, 75))
             AlertDialog.Builder(this).setTitle("笔迹颜色").setItems(arrayOf("黑", "蓝", "红", "绿")) { _, index -> ink.penColor = colors[index]; selectTool(PaperInkView.Mode.WRITE) }.show()
         }
+        button(pens, "修改内容") { editGeneratedContent() }
         button(pens, "笔触粗细") {
             AlertDialog.Builder(this).setTitle("笔触粗细").setItems(arrayOf("细", "标准", "粗", "画笔")) { _, index -> ink.penWidth = floatArrayOf(1.2f, 1.8f, 3f, 5f)[index]; selectTool(PaperInkView.Mode.WRITE) }.show()
         }
@@ -302,6 +304,39 @@ class PaperActivity : Activity() {
             } catch (e: Exception) { runOnUiThread { if (!destroyed) {
                 loading = false; ink.isEnabled = true; status.text = "学习页打开失败，原文件已保留。"
             } } }
+        }
+    }
+    private fun editGeneratedContent() {
+        if (loading || submitting || studyJob?.isActive == true) { status.text = "请等待当前操作完成后修改内容。"; return }
+        val workspace = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id } }
+        val source = sourcePath
+        if (workspace == null || source == null) { status.text = "当前是导入的 PDF，可直接批注；请打开 AI 或 MCP 生成页以修改其内容。"; return }
+        val originalDocument = document
+        io.execute {
+            try {
+                val file = java.io.File(workspace.root, source.removePrefix("/")).canonicalFile
+                require(file.path.startsWith(workspace.root.canonicalPath + "/memory/pages/") && file.isFile && file.length() <= 256000)
+                val original = file.readText()
+                runOnUiThread { if (!destroyed && document == originalDocument) {
+                    try { GeneratedContentEditor.show(this, original) { edited ->
+                        val revision = ink.page.revision; val version = interactionVersion
+                        status.text = "正在保存修改后的页面……"
+                        io.execute {
+                            try {
+                                require(file.readText() == original) { "原内容已经更新，请重新打开编辑器" }
+                                val turn = LearningTurn.prepare(workspace, "手动修改生成内容", source, "用户直接编辑")
+                                turn.publishEdited(edited) { input, output -> LearningPageRenderer.render(input, output, true) }
+                                runOnUiThread { if (!destroyed) {
+                                    readyPdf = turn.pdf
+                                    if (document == originalDocument && ink.page.revision == revision && interactionVersion == version)
+                                        openGenerated(turn.pdf, workspace.id, LearningTurn.sourcePath(turn.pdf))
+                                    else status.text = "修改已保存；点查看生成页打开，当前笔迹保留。"
+                                } }
+                            } catch (e: Exception) { message("修改未保存：${e.message}。原页保留。") }
+                        }
+                    } } catch (e: Exception) { status.text = "内容暂时无法编辑：${e.message}" }
+                } }
+            } catch (e: Exception) { message("源内容读取失败：${e.message}") }
         }
     }
     private fun study(request: String, origin: String) {
