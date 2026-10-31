@@ -44,7 +44,7 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
             render(source, pdf)
             val previous = workspace.transcript.takeIf(File::isFile)?.readText().orEmpty()
             write(workspace.transcript, (previous + "\n你：${record.getString("request")}\nWE：$answer\n页面：/memory/pages/${source.name}\n").takeLast(256000))
-            update("ready")
+            update("ready"); WorkspacePageEvents.publish(workspace.id,pdf)
             return pdf
         } catch (e: Exception) { update("interrupted"); throw e }
     }
@@ -61,7 +61,7 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
             require(pdf.isFile && pdf.length() > 0) { "Page rendering failed" }
             val previous = workspace.transcript.takeIf(File::isFile)?.readText().orEmpty()
             write(workspace.transcript, (previous + "\n你：${record.getString("request")}\n$author：已生成学习页\n页面：/memory/pages/${source.name}\n").takeLast(256000))
-            update("ready")
+            update("ready"); WorkspacePageEvents.publish(workspace.id,pdf)
         } catch (e: Exception) { update("interrupted"); throw e }
     }
     companion object {

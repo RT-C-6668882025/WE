@@ -67,6 +67,12 @@ class PaperActivity : Activity() {
     private var command = 0
     private var stopped = false
     private var chooseTool: (PaperInkView.Mode) -> Unit = {}
+    private val readyListener: (String,java.io.File) -> Unit = { owner,pdf ->
+        handler.post { if (!destroyed && workspaceId == owner) {
+            readyPdf = pdf; generatedButton.visibility = android.view.View.VISIBLE
+            status.text = "工作区有新生成的页面，可点击打开；当前笔迹保留。"
+        } }
+    }
     private fun updateBusy() {
         val busy = submitting || studyJob?.isActive == true
         sendButton.isEnabled = !busy
@@ -162,6 +168,7 @@ class PaperActivity : Activity() {
             }
         }; root.addView(generatedButton)
         root.addView(status)
+        WorkspacePageEvents.subscribe(readyListener)
         val generated = intent.getStringExtra("generatedPdf")
         setInputMode(if (intent.hasExtra("entryMode")) intent.getStringExtra("entryMode") == "drawing" else prefs.getBoolean("paper_drawing_${workspaceId.orEmpty()}",false))
         workspaceId = intent.getStringExtra("workspace")
@@ -298,6 +305,7 @@ class PaperActivity : Activity() {
                 prefs.edit().putString("paper_workspace_$id", workspace).putString("paper_source_$id",
                     sourceFile?.let { "/" + it.relativeTo(owner.root).path }).apply()
                 runOnUiThread { if (!destroyed) {
+                    generatedButton.visibility = android.view.View.GONE
                     prefs.edit().putString("paper_last_pdf_$workspace",file.path).apply()
                     val previous = prefs.getString("paper_last_document_$workspace",null)
                     loading = false; load(id,if (previous == id) prefs.getInt("paper_last_page_$workspace",0) else 0)
@@ -492,6 +500,7 @@ class PaperActivity : Activity() {
     private fun message(text: String) = runOnUiThread { if (!destroyed) status.text = text }
     override fun onDestroy() {
         destroyed = true
+        WorkspacePageEvents.unsubscribe(readyListener)
         scope.cancel(); studyRuntime?.close()
         handler.removeCallbacks(recognizeLater)
         // Submitted work may finish saving its captured revision after this screen closes.

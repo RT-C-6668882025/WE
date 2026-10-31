@@ -24,7 +24,8 @@ add_library(we_drawdance_core STATIC ${common} ${engine} ${msg} ${mypaint} ${zst
 target_include_directories(we_drawdance_core PUBLIC "${D}/libcommon" "${D}/libengine" "${D}/libmsg" "${D}/libdb"
  "${D}/bundled/libmypaint" "${D}/bundled/uthash" "${D}/bundled/parson" "${D}/bundled/qgrayraster" "${D}/bundled/sqlite3" "${Z}")
 target_compile_definitions(we_drawdance_core PRIVATE SQLITE_OMIT_LOAD_EXTENSION=1 SQLITE_ENABLE_DBPAGE_VTAB=1 SQLITE_THREADSAFE=2)
-target_compile_options(we_drawdance_core PRIVATE -ffunction-sections -fdata-sections -fno-strict-aliasing)
+target_compile_options(we_drawdance_core PRIVATE -O2 -ffunction-sections -fdata-sections -fno-strict-aliasing)
 add_library(we_drawpile SHARED drawpile_classic.c drawdance_adapter.c drawdance_jni.c)
+target_compile_options(we_drawpile PRIVATE -O2)
 target_link_libraries(we_drawpile we_drawdance_core z m)
 target_link_options(we_drawpile PRIVATE -Wl,--gc-sections)
