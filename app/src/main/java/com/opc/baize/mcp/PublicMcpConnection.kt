@@ -20,11 +20,11 @@ internal class PublicMcpConnection(
         }
     }
     fun ensure(): JSONObject = synchronized(lock) {
-        val existing=load()
-        if(existing!=null) {address(existing);return@synchronized existing}
-        val created=pair(DEFAULT_RELAY)
-        address(created)
-        save(created)
+        val existing=McpSetupFailure.at("读取已保存配对",load)
+        if(existing!=null) {McpSetupFailure.at("检查已保存配对") {address(existing)};return@synchronized existing}
+        val created=McpSetupFailure.at("连接 WE 服务") {pair(DEFAULT_RELAY)}
+        McpSetupFailure.at("检查配对响应") {address(created)}
+        McpSetupFailure.at("保存配对凭据") {save(created)}
         created
     }
     fun revoke(closeRemote: (JSONObject) -> Unit) = synchronized(lock) {

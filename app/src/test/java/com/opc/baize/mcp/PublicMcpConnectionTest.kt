@@ -37,7 +37,7 @@ class PublicMcpConnectionTest {
     @Test fun networkFailureCanRetryWithoutSavingAnIncompleteIdentity() {
         var saved:JSONObject?=null;var fails=true
         val setup=PublicMcpConnection({saved},{saved=it},{if(fails) error("offline") else identity()})
-        try {setup.ensure();fail()} catch(_:IllegalStateException){}
+        try {setup.ensure();fail()} catch(_:McpSetupFailure){}
         assertNull(saved);fails=false;assertNotNull(setup.ensure());assertNotNull(saved)
     }
     @Test fun existingPairingAndFailedRevokeArePreserved() {
@@ -51,7 +51,7 @@ class PublicMcpConnectionTest {
     @Test fun invalidSavedConfigurationIsNotSilentlyReplaced() {
         val invalid=identity().put("agentToken","bad")
         var called=false
-        try {PublicMcpConnection({invalid},{},{called=true;identity()}).ensure();fail()} catch(_:IllegalArgumentException){}
+        try {PublicMcpConnection({invalid},{},{called=true;identity()}).ensure();fail()} catch(_:McpSetupFailure){}
         assertFalse(called)
     }
 }

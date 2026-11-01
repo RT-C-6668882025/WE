@@ -63,15 +63,17 @@ internal class McpRelayClient(private val base: String, private val token: Strin
         fun pair(raw: String): JSONObject {
             val base = validateBase(raw); val http = http()
             try {
-                http.newCall(Request.Builder().url("$base/health").build()).execute().use {
-                    require(it.isSuccessful); val health = JSONObject(requireNotNull(it.body).string())
-                    require(health.optString("name") == "write-everything" && health.optInt("protocol")==2 && health.optBoolean("persistent")) { "此地址不是持久化 WE 中继，请勿填写 WordTok 地址" }
-                }
-                return http.newCall(Request.Builder().url("$base/pair").post("{}".toRequestBody("application/json".toMediaType())).build()).execute().use {
-                    require(it.isSuccessful); val p = JSONObject(requireNotNull(it.body).string())
-                    require(p.getString("agentToken").matches(Regex("[0-9a-f]{64}")) && p.getString("deviceToken").matches(Regex("[0-9a-f]{64}")))
+                McpSetupFailure.at("检查服务器") {http.newCall(Request.Builder().url("$base/health").build()).execute().use {
+                    if(!it.isSuccessful) throw McpSetupFailure("检查服务器","HTTP ${it.code}")
+                    val health = JSONObject(requireNotNull(it.body).string())
+                    if(health.optString("name")!="write-everything" || health.optInt("protocol")!=2 || !health.optBoolean("persistent")) throw McpSetupFailure("检查服务器","服务协议不匹配，需要 WE protocol 2")
+                }}
+                return McpSetupFailure.at("建立配对") {http.newCall(Request.Builder().url("$base/pair").post("{}".toRequestBody("application/json".toMediaType())).build()).execute().use {
+                    if(!it.isSuccessful) throw McpSetupFailure("建立配对","HTTP ${it.code}")
+                    val p = JSONObject(requireNotNull(it.body).string())
+                    if(!p.getString("agentToken").matches(Regex("[0-9a-f]{64}")) || !p.getString("deviceToken").matches(Regex("[0-9a-f]{64}"))) throw McpSetupFailure("建立配对","服务返回的配对格式不兼容")
                     p.put("base", base)
-                }
+                }}
             } finally { http.connectionPool.evictAll(); http.dispatcher.executorService.shutdown() }
         }
     }

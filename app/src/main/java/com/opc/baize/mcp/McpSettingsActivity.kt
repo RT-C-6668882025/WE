@@ -64,9 +64,12 @@ open class McpSettingsActivity : Activity() {
                     } catch(_:Exception) {failure="连接未启动，请重试；已保存的地址保留。"}
                     busy=false;copyButton.isEnabled=true;renderState()
                 }}
-            } catch(_:Exception) {runOnUiThread {if(alive) {
-                busy=false;copyButton.isEnabled=true;failure="连接准备失败，请检查网络后点击重试。";renderState()
-            }}}
+            } catch(e:Exception) {
+                val message=McpSetupFailure.describe(e)
+                runOnUiThread {if(alive) {
+                    busy=false;copyButton.isEnabled=true;failure=message;renderState()
+                }}
+            }
         }
     }
     private fun setSwitch(value:Boolean) {updatingSwitch=true;connectionSwitch.isChecked=value;updatingSwitch=false}
