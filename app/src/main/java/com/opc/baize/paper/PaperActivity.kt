@@ -272,6 +272,11 @@ class PaperActivity : Activity() {
                 catch (e: Exception) { rendered.bitmap.recycle(); throw e }
                 runOnUiThread {
                     if (destroyed) { result.first.recycle(); return@runOnUiThread }
+                    // A committed MCP edit must win over an earlier decoded IO snapshot.
+                    val latest=try {repository.load(id,index,result.second.width,result.second.height)} catch(e:Exception) {
+                        result.first.recycle();loading=false;ink.isEnabled=true
+                        status.text="笔迹同步失败，原页面保留：${e.message}";return@runOnUiThread
+                    }
                     document = id; pageIndex = index; pageCount = count
                     workspaceId = prefs.getString("paper_workspace_$id", null)
                     sourcePath = prefs.getString("paper_source_$id", null)
@@ -280,8 +285,6 @@ class PaperActivity : Activity() {
                     nextPage.visibility = previousPage.visibility
                     previousPage.isEnabled = index > 0; nextPage.isEnabled = index+1 < count
                     prefs.edit().putString("paper_last_document_${workspaceId.orEmpty()}", id).putInt("paper_last_page_${workspaceId.orEmpty()}",index).apply()
-                    // An MCP commit may have completed after the IO snapshot was decoded.
-                    val latest=repository.load(id,index,result.second.width,result.second.height)
                     ink.load(result.first,latest); ink.isEnabled = true; loading = false; attachCanvas()
                     pageLabel.text = "第 ${index + 1} / $count 页 · 笔迹自动保存"
                     prefs.edit().putString("paper_last_document", id).putInt("paper_last_page", index).apply()

@@ -33,6 +33,35 @@ class DrawingDeviceTest {
             assertTrue(first.pdf.isFile)
         } finally {workspace.container.deleteRecursively()}
     }
+    @Test fun backgroundMcpWaitsForFinalQueuedInkSaveBeforeRevisionCheck() {
+        val context=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val id="e".repeat(64);val store=PaperRepository(context)
+        val root=java.io.File(context.filesDir,"papers/$id");root.deleteRecursively()
+        val blocked=java.util.concurrent.CountDownLatch(1)
+        val release=java.util.concurrent.CountDownLatch(1)
+        val worker=java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            PaperIo.executor.submit {blocked.countDown();release.await(5,java.util.concurrent.TimeUnit.SECONDS)}
+            assertTrue(blocked.await(2,java.util.concurrent.TimeUnit.SECONDS))
+            val user=PaperPage(600,840,1,listOf(PaperStroke(listOf(InkPoint(20f,20f,1f,0)))))
+            PaperIo.executor.submit {store.save(id,0,user)}
+            val operation=worker.submit<PaperPage> {
+                CanvasSession.change(java.util.UUID.randomUUID().toString(),id,0,0,{it}) {
+                    store.edit(id,0,600,840,0) {it.copy(strokes=listOf(PaperStroke(listOf(InkPoint(40f,40f,1f,0)))))}
+                }
+            }
+            Thread.sleep(100)
+            assertFalse("MCP must not pass an outstanding local save",operation.isDone)
+            release.countDown()
+            assertThrows(java.util.concurrent.ExecutionException::class.java) {operation.get(10,java.util.concurrent.TimeUnit.SECONDS)}
+            PaperIo.executor.submit {}.get(5,java.util.concurrent.TimeUnit.SECONDS)
+            assertEquals(user,store.load(id,0,600,840))
+        } finally {
+            release.countDown();worker.shutdownNow()
+            PaperIo.executor.submit {}.get(5,java.util.concurrent.TimeUnit.SECONDS)
+            root.deleteRecursively()
+        }
+    }
     @Test fun mcpEditsTheVisibleCanvasAndExportsTheSameRevision() {
         val instrumentation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
         val context=instrumentation.targetContext
