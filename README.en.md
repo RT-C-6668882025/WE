@@ -37,7 +37,7 @@ The embedded Android Agent Runtime provides file tools, Skill reading and a publ
 
 External MCP is available under Settings → Agent connection · MCP. A same-device native client can connect to the Android loopback endpoint; tools read workspace files and handwritten page images, write files/Skills and publish a new learning page. Writes use durable operation receipts and version checks.
 
-WordTok-style fixed public URLs use a separately deployed HTTPS relay while Android executes tools. **No hosted WE public domain is bundled.** Deploy the dedicated relay first; do not reuse WordTok URLs or data. See [MCP setup](mcp/README.md). A cloud client cannot reach Android loopback directly.
+WordTok-style fixed public URLs use a separately deployed HTTPS relay while Android executes tools. The default WE relay is https://we.wordrelay.dpdns.org. Use Copy MCP address to pair and connect automatically; do not reuse WordTok URLs or data. See [MCP setup](mcp/README.md). A cloud client cannot reach Android loopback directly.
 
  Current generated papers are primarily text. Editable graphical scenes, arbitrary Python/Node Skill scripts, MCP OAuth, stdio and Google Drive sync are not supported. DSH Go, RikkaHub, Excalidraw and Jetpack Ink were investigated but have not been integrated.
 
