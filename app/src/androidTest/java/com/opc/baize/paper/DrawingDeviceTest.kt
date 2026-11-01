@@ -100,10 +100,24 @@ class DrawingDeviceTest {
             assertEquals("succeeded",image.getString("status"))
             assertEquals(1L,image.getJSONObject("result").getLong("revision"))
             instrumentation.waitForIdleSync()
-            instrumentation.uiAutomation.takeScreenshot()?.let {bitmap ->
-                val file=java.io.File(activity.getExternalFilesDir("ui-checks"),"unified-canvas.png")
-                try {file.outputStream().use {bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}} finally {bitmap.recycle()}
+            lateinit var capture:Bitmap
+            instrumentation.runOnMainSync {
+                val root=activity.window.decorView
+                assertTrue(root.width>0 && root.height>0)
+                capture=Bitmap.createBitmap(root.width,root.height,Bitmap.Config.ARGB_8888)
+                root.draw(Canvas(capture))
             }
+            try {
+                // AGP can uninstall the target after connected tests; app-specific files vanish.
+                // Publish the fixture screenshot to shared test media before that cleanup.
+                val values=android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,"unified-canvas.png")
+                    put(android.provider.MediaStore.Images.Media.MIME_TYPE,"image/png")
+                    if(android.os.Build.VERSION.SDK_INT>=29) put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,"Pictures/WE-CI/")
+                }
+                val uri=requireNotNull(context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values))
+                requireNotNull(context.contentResolver.openOutputStream(uri)).use {assertTrue(capture.compress(Bitmap.CompressFormat.PNG,100,it))}
+            } finally {capture.recycle()}
         } finally {
             instrumentation.runOnMainSync {activity.finish()}
             instrumentation.waitForIdleSync(); workspace.container.deleteRecursively()
