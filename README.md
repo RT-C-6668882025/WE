@@ -6,20 +6,20 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 
 [下载安装包](https://github.com/RT-C-6668882025/WE/releases) · [版本记录](docs/releases/) · [反馈问题](https://github.com/RT-C-6668882025/WE/issues) · [English](README.en.md)
 
-当前源码版本：**v0.5.0 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
+当前源码版本：**v0.6.0 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
 
 ## 怎么使用
 
 ### 首页：直接开始
 
-- 首页分为手写、绘画、打字三种入口。绘画默认不触发停笔 AI。
+- 首页直接手写，点击“发送”处理笔迹；打字在首页提交。绘画打开独立编辑器，与首页共享任务及资料。自动识别默认关闭。
 - 独立语音入口已取消，语音使用输入法自带能力。
 - 点击左下角图标，打开“工作区 / 设置 / 关于”面板。
 
 ### 工作区：查看历史，继续任务
 
 - 旧会话和已有学习工作区统一列出，原会话存档保留。
-- 点击一个工作区，在首页继续原任务，恢复最近对话上下文。
+- 点击一个工作区，在首页继续原任务，恢复最近对话上下文与软件手写草稿；不会自动跳到绘画页。
 - “＋ 新工作区”开始新任务。
 - 每个工作区的“资料”中可查看文件、导入 PDF、打开最近学习页、重命名或删除工作区。
 - PDF、学习页面等操作放在对应工作区内，设置中不再提供独立工作台入口。
@@ -97,6 +97,7 @@ WE 由 **RT · [RT-C-6668882025](https://github.com/RT-C-6668882025)** 维护。
 
 - [Moling](https://github.com/xiaoxi668v-prog/moling)：原项目及手写底座，作者小西校长。
 - [Android Agent Runtime](https://github.com/NoHarry/android-agent-runtime)：设备内 Agent、Skill 与 MCP 客户端能力，使用 `0.3.0`，MIT；[随附许可](app/src/main/assets/agent-licenses/Android-Agent-Runtime-MIT.txt)。
+- [xnotes](https://github.com/shardulvs/xnotes-android)：复用选区几何变换，MIT；[集成审计](docs/research/editor-integration.md)。
 - [NanoHTTPD](https://github.com/NanoHttpd/nanohttpd)：Android 本机 MCP HTTP 层，2.3.1，BSD-3-Clause；许可随 APK 附带。
 - Google ML Kit Digital Ink Recognition：本机笔迹识别。
 - AndroidX：文档访问与运动预测等组件。
@@ -104,4 +105,4 @@ WE 由 **RT · [RT-C-6668882025](https://github.com/RT-C-6668882025)** 维护。
 
 项目沿用 **GPL-3.0**，完整条款见 [LICENSE](LICENSE)。第三方组件与字体遵循各自许可。
 
-手写与绘画共用工作区画布。默认手动发送，范围可选整页、选区、仅文字；自动识别需主动开启。指令预设、系统提示词、页面任务模板均可修改。绘画已使用 Drawdance 上游笔刷引擎、消息与瓦片画布 JNI 管线；功能范围见 [移植说明](docs/third-party/drawpile.md)。构建前运行 `bash tools/fetch-native-sources.sh`。
+首页手写与独立绘画编辑器共用工作区，分别保存草稿和文档。默认手动发送，范围可选整页、选区、仅文字；自动识别需主动开启。指令预设、系统提示词、页面任务模板均可修改。绘画已接入持续原生画布、图层管理、Classic / MyPaint 笔刷、跨笔画涂抹、局部擦除、形状、填充、取色、选区笔迹变换和 PNG 导出；功能范围与边界见 [移植说明](docs/third-party/drawpile.md)。构建前运行 `bash tools/fetch-native-sources.sh`。

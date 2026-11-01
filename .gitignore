@@ -13,3 +13,6 @@ mcp/data/
 
 # Reproducible upstream native dependencies; fetched at pinned commits.
 /vendor/
+
+# Android external native build cache.
+app/.cxx/

@@ -18,6 +18,10 @@ class PaperInkView(context: Context) : View(context) {
         }
     var penColor: Int = Color.BLACK
     var brushEngine = "vector"
+    var brushSettings = BrushSettings()
+    var drawingTool = "freehand"
+    var pixelEraser = false
+    private val layerRenderer = LayerRenderer()
     var penWidth: Float = 1.8f
     val hasSelection: Boolean get() = region?.let { it.width() > 4 && it.height() > 4 } == true
     fun clearSelection() { cancelInteraction(); region = null; selectionBefore = null; invalidate() }
@@ -28,7 +32,8 @@ class PaperInkView(context: Context) : View(context) {
     private var image: Bitmap? = null
     var page = PaperPage(1, 1, 0, emptyList()); private set
     private var current = mutableListOf<InkPoint>()
-    private val history = java.util.ArrayDeque<List<PaperStroke>>()
+    private val history = java.util.ArrayDeque<PaperPage>()
+    private val future = java.util.ArrayDeque<PaperPage>()
     private var zoom = 1f; private var dx = 0f; private var dy = 0f
     private var lastX = 0f; private var lastY = 0f
     private var startX = 0f; private var startY = 0f
@@ -51,18 +56,87 @@ class PaperInkView(context: Context) : View(context) {
     private var region: RectF? = null
     private val pen = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     fun load(bitmap: Bitmap, data: PaperPage) {
-        cancelInteraction(); gestureSequence = false; gestureFocus = null; image?.recycle(); image = bitmap; page = data; current.clear(); history.clear(); region = null; zoom = 1f; dx = 0f; dy = 0f; invalidate()
+        cancelInteraction(); gestureSequence = false; gestureFocus = null; layerRenderer.close(); image?.recycle(); image = bitmap; page = data; current.clear(); history.clear(); future.clear(); region = null; zoom = 1f; dx = 0f; dy = 0f; invalidate()
     }
-    fun release() { cancelInteraction(); image?.recycle(); image = null }
+    fun release() { cancelInteraction(); layerRenderer.close(); image?.recycle(); image = null }
     fun resetView() { zoom = 1f; dx = 0f; dy = 0f; invalidate() }
     fun zoom(factor: Float) { zoom = (zoom * factor).coerceIn(1f, 5f); invalidate() }
     fun undo() {
-        val previous = if (history.isNotEmpty()) history.removeLast() else page.strokes.takeIf { it.isNotEmpty() }?.dropLast(1) ?: return
-        page = page.copy(revision = page.revision + 1, strokes = previous); changed?.invoke(page); invalidate()
+        cancelInteraction()
+        val previous = if(history.isNotEmpty()) history.removeLast() else return
+        future.addLast(page); publish(previous)
     }
-    private fun commit(strokes: List<PaperStroke>) {
-        history.addLast(page.strokes); if (history.size > 30) history.removeFirst()
-        page = page.copy(revision = page.revision + 1, strokes = strokes); changed?.invoke(page); invalidate()
+    fun redo() { cancelInteraction(); if(future.isNotEmpty()) { history.addLast(page); publish(future.removeLast()) } }
+    private fun publish(data: PaperPage) {
+        page=data.copy(revision=page.revision+1); changed?.invoke(page); invalidate()
+    }
+    private fun edit(data: PaperPage) {
+        cancelInteraction(); if(data==page) return
+        history.addLast(page);if(history.size>30) history.removeFirst();future.clear();publish(data)
+    }
+    private fun commit(strokes: List<PaperStroke>) = edit(page.copy(strokes=strokes))
+    fun selectLayer(id: Int) { if(page.layers.any {it.id==id} && page.activeLayerId!=id) {cancelInteraction();publish(page.copy(activeLayerId=id))} }
+    fun addLayer() {
+        if(page.layers.size>=32) return
+        val id=(page.layers.maxOfOrNull {it.id} ?: 0)+1
+        edit(page.copy(layers=page.layers+PaperLayer(id,"图层 $id"),activeLayerId=id))
+    }
+    fun updateLayer(layer: PaperLayer) = edit(page.copy(layers=page.layers.map {if(it.id==layer.id) layer else it}))
+    fun deleteLayer() {
+        if(page.layers.size==1) { if(!page.activeLayer.locked) commit(page.strokes.filterNot {it.layerId==page.activeLayerId});return }
+        val layers=page.layers.filterNot {it.id==page.activeLayerId}
+        edit(page.copy(layers=layers,strokes=page.strokes.filterNot {it.layerId==page.activeLayerId},activeLayerId=layers.last().id))
+    }
+    fun reorderLayer(direction: Int) {
+        val layers=page.layers.toMutableList();val index=layers.indexOfFirst {it.id==page.activeLayerId}
+        val next=(index+direction).coerceIn(0,layers.lastIndex);java.util.Collections.swap(layers,index,next)
+        edit(page.copy(layers=layers))
+    }
+    fun duplicateLayer() {
+        if(page.layers.size>=32) return
+        val id=page.layers.maxOf {it.id}+1;val source=page.activeLayer
+        edit(page.copy(layers=page.layers+source.copy(id=id,name=(source.name+" 副本").take(120),locked=false),
+            strokes=page.strokes+page.strokes.filter {it.layerId==source.id}.map {it.copy(layerId=id)},activeLayerId=id))
+    }
+    fun transformSelection(moveX: Float,moveY: Float,scale: Float,duplicate: Boolean=false,delete: Boolean=false,rotation: Float=0f,mirror: Boolean=false) {
+        val bounds=region ?: return
+        if(page.activeLayer.locked || !page.activeLayer.visible || !scale.isFinite() || scale<=0) return
+        val chosen=page.strokes.filter {it.layerId==page.activeLayerId && it.points.isNotEmpty() && it.points.all {p -> bounds.contains(p.x,p.y)}}
+        if(chosen.isEmpty()) return
+        val center=com.xnotes.core.geometry.Pt(bounds.centerX().toDouble(),bounds.centerY().toDouble())
+        val affine=com.xnotes.core.geometry.Affine.translateBy(moveX.toDouble(),moveY.toDouble())
+            .compose(com.xnotes.core.geometry.Affine.rotateAbout(center,Math.toRadians(rotation.toDouble())))
+            .compose(com.xnotes.core.geometry.Affine.scaleAbout(center,if(mirror) -scale.toDouble() else scale.toDouble(),scale.toDouble()))
+        val transformed=chosen.map {stroke -> stroke.copy(width=(stroke.width*scale).coerceIn(.1f,1000f),points=stroke.points.map {p ->
+            val point=affine.apply(com.xnotes.core.geometry.Pt(p.x.toDouble(),p.y.toDouble()))
+            p.copy(x=point.x.toFloat().coerceIn(0f,page.width.toFloat()),y=point.y.toFloat().coerceIn(0f,page.height.toFloat())) })}
+        commit((if(duplicate) page.strokes else page.strokes-chosen.toSet()) + if(delete) emptyList() else transformed)
+        clearSelection()
+    }
+    fun exportBitmap(transparent: Boolean): Bitmap {
+        check(image!=null)
+        val scale=minOf(2f,2048f/maxOf(page.width,page.height))
+        val bitmap=Bitmap.createBitmap((page.width*scale).toInt().coerceAtLeast(1),(page.height*scale).toInt().coerceAtLeast(1),Bitmap.Config.ARGB_8888)
+        Canvas(bitmap).apply {scale(scale,scale);if(!transparent) {
+            drawColor(Color.WHITE);drawBitmap(image!!,null,RectF(0f,0f,page.width.toFloat(),page.height.toFloat()),null)
+        };strokes(this,page)}
+        return bitmap
+    }
+    private fun currentStroke(): PaperStroke {
+        val erasing=mode==Mode.ERASE && pixelEraser
+        val points=if(!erasing && current.size>=2) shapePoints(current.first(),current.last()) else current.toList()
+        return PaperStroke(points,if(erasing) eraserRadius*2 else penWidth,penColor,
+            if(erasing) DrawdanceBrush.ENGINE else brushEngine,page.activeLayerId,
+            if(erasing) BrushSettings(hardness=1f,pressure=false,erase=true) else brushSettings,
+            if(!erasing && drawingTool=="fill") "fill" else "stroke")
+    }
+    private fun shapePoints(a: InkPoint,b: InkPoint): List<InkPoint> = when(drawingTool) {
+        "line" -> listOf(a.copy(pressure=1f),b.copy(pressure=1f))
+        "rectangle" -> listOf(a,a.copy(x=b.x),b,a.copy(y=b.y),a).mapIndexed {i,p -> p.copy(pressure=1f,time=a.time+i*10)}
+        "ellipse" -> (0..96).map {i -> val angle=i*Math.PI*2/96
+            a.copy(x=(a.x+b.x)/2+kotlin.math.cos(angle).toFloat()*kotlin.math.abs(b.x-a.x)/2,
+                y=(a.y+b.y)/2+kotlin.math.sin(angle).toFloat()*kotlin.math.abs(b.y-a.y)/2,pressure=1f,time=a.time+i*10) }
+        else -> current.toList()
     }
     private fun erase(x: Float, y: Float) {
         fun near(a: InkPoint, b: InkPoint, width: Float): Boolean {
@@ -71,13 +145,13 @@ class PaperInkView(context: Context) : View(context) {
             val dx = x - a.x - t * vx; val dy = y - a.y - t * vy
             return dx * dx + dy * dy <= (eraserRadius + width / 2) * (eraserRadius + width / 2)
         }
-        val kept = page.strokes.filterNot { stroke -> stroke.points.firstOrNull()?.let { near(it, it, stroke.width) } == true ||
-            (1 until stroke.points.size).any { near(stroke.points[it - 1], stroke.points[it], stroke.width) } }
+        val kept = page.strokes.filterNot { stroke -> stroke.layerId==page.activeLayerId && ( stroke.points.firstOrNull()?.let { near(it, it, stroke.width) } == true ||
+            (1 until stroke.points.size).any { near(stroke.points[it - 1], stroke.points[it], stroke.width) }) }
         if (kept.size != page.strokes.size) page = page.copy(strokes = kept)
     }
     private fun transform() = PaperTransform.fit(width.coerceAtLeast(1), height.coerceAtLeast(1), page.width, page.height, zoom, dx, dy)
     private fun strokes(canvas: Canvas, data: PaperPage) {
-        data.strokes.forEach { stroke -> drawStroke(canvas, stroke) }
+        layerRenderer.draw(canvas,data)
     }
     private fun drawStroke(canvas: Canvas, stroke: PaperStroke) {
         PaperStrokeRenderer.draw(canvas, stroke)
@@ -89,7 +163,7 @@ class PaperInkView(context: Context) : View(context) {
         canvas.clipRect(0f, 0f, page.width.toFloat(), page.height.toFloat())
         canvas.drawColor(Color.WHITE)
         image?.let { canvas.drawBitmap(it, null, RectF(0f, 0f, page.width.toFloat(), page.height.toFloat()), null) }
-        strokes(canvas, page); drawStroke(canvas, PaperStroke(current.toList(), penWidth, penColor, brushEngine))
+        layerRenderer.draw(canvas,page,current.takeIf {it.isNotEmpty()}?.let {currentStroke()})
         region?.let { pen.color = Color.DKGRAY; pen.strokeWidth = 1f / t.scale; canvas.drawRect(it, pen) }
         if (mode == Mode.ERASE) eraserPosition?.let { point ->
             cursorPaint.style = Paint.Style.FILL; cursorPaint.color = 0x3371A6FF
@@ -164,8 +238,16 @@ class PaperInkView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 strokeStarted?.invoke()
                 lastX = viewX; lastY = viewY; startX = x; startY = y
-                if (mode == Mode.WRITE) current = mutableListOf(InkPoint(x, y, e.getPressure(pointer), e.eventTime))
-                if (mode == Mode.ERASE) { eraseBefore = page.strokes; eraserPosition = PointF(x,y); erase(x, y) }
+                if ((mode == Mode.WRITE || mode == Mode.ERASE) && (!page.activeLayer.visible || page.activeLayer.locked)) {
+                    toolFeedback?.invoke("当前图层已锁定或隐藏，请在图层面板调整。");activePointer=-1;return true
+                }
+                if (mode == Mode.WRITE && drawingTool=="eyedropper") {
+                    val sample=exportBitmap(false);val px=(x/page.width*sample.width).toInt().coerceIn(0,sample.width-1);val py=(y/page.height*sample.height).toInt().coerceIn(0,sample.height-1)
+                    penColor=sample.getPixel(px,py);sample.recycle();drawingTool="freehand";activePointer=-1
+                    toolFeedback?.invoke("已取色，继续绘画。");return true
+                }
+                if (mode == Mode.WRITE || (mode==Mode.ERASE && pixelEraser)) current = mutableListOf(InkPoint(x, y, e.getPressure(pointer), e.eventTime))
+                if (mode == Mode.ERASE && !pixelEraser) { eraseBefore = page.strokes; eraserPosition = PointF(x,y); erase(x, y) }
                 if (mode == Mode.SELECT) { selectionBefore = region?.let { RectF(it) }; selecting = true; region = RectF(x, y, x, y) }
             }
             MotionEvent.ACTION_MOVE -> when (mode) {
@@ -178,13 +260,13 @@ class PaperInkView(context: Context) : View(context) {
                 }
                 Mode.MOVE -> { dx += viewX - lastX; dy += viewY - lastY }
                 Mode.SELECT -> if (selecting) region = RectF(minOf(startX, x), minOf(startY, y), maxOf(startX, x), maxOf(startY, y))
-                Mode.ERASE -> { eraserPosition = PointF(x,y); erase(x, y) }
+                Mode.ERASE -> { eraserPosition = PointF(x,y);if(pixelEraser) current.add(InkPoint(x,y,1f,e.eventTime)) else erase(x, y) }
             }
             MotionEvent.ACTION_UP -> {
-                if (mode == Mode.WRITE && current.isNotEmpty()) {
-                    current.add(InkPoint(x, y, e.getPressure(pointer), e.eventTime)); val stroke = PaperStroke(current.toList(), penWidth, penColor, brushEngine); current.clear(); commit(page.strokes + stroke)
+                if ((mode == Mode.WRITE || (mode==Mode.ERASE && pixelEraser)) && current.isNotEmpty()) {
+                    current.add(InkPoint(x, y, e.getPressure(pointer), e.eventTime)); val stroke = currentStroke(); current.clear(); commit(page.strokes + stroke)
                 }
-                if (mode == Mode.ERASE) { eraserPosition = PointF(x,y); erase(x,y) }
+                if (mode == Mode.ERASE && !pixelEraser) { eraserPosition = PointF(x,y); erase(x,y) }
                 eraseBefore?.let { before ->
                     val after = page.strokes; page = page.copy(strokes = before)
                     if (after != before) { commit(after); toolFeedback?.invoke("橡皮：已擦除 ${before.size - after.size} 条笔迹，可点撤销恢复。") }

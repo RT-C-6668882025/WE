@@ -423,6 +423,13 @@ class InkView(context: Context) : View(context) {
 
     /** 当前笔迹快照（引用列表；消散清场按身份把它们从 strokes 移除） */
     fun snapshot(): List<MutableList<Pt>> = strokes.toList()
+    fun draftSnapshot(): List<List<Pt>> = if(fading) emptyList() else strokes.map {it.toList()}
+    fun restoreDraft(sourceWidth: Int,sourceHeight: Int,saved: List<List<Pt>>) {
+        if(drawing || strokes.isNotEmpty() || width<=0 || height<=0) return
+        val sx=width.toFloat()/sourceWidth;val sy=height.toFloat()/sourceHeight
+        strokes.addAll(saved.map {line -> line.map {p -> p.copy(x=p.x*sx,y=p.y*sy,w=p.w*minOf(sx,sy))}.toMutableList()})
+        rebuildBitmap()
+    }
 
     fun isWriting(): Boolean = drawing || gestureActive
 

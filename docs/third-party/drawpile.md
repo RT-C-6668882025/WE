@@ -15,12 +15,26 @@ pinned Zstandard. It does not instantiate Qt or a desktop process.
 
 Drawing strokes tagged drawdance-v1 run the real upstream classic brush engine,
 message serialization objects, 15-bit tiled canvas and flattening through JNI.
-The adapter renders bounded per-stroke native canvases and Android composites
-those rasters over the PDF. Finished rasters use a bounded memory cache. Page
-ink remains replayable vectors; editor, snapshots and MCP share the renderer.
-Older drawpile-classic-v1 mask strokes and vector strokes retain their renderer.
+The Android layer renderer keeps a native tiled canvas alive between strokes. Live
+stroke previews clone the upstream canvas state (copy-on-write); releasing a
+preview never mutates committed ink. Undo and edits deterministically replay the
+saved stroke commands. Legacy vector and mask strokes retain their renderer and
+are imported through tiled PutImage messages before subsequent native strokes.
 
-This completes the classic brush-to-native-canvas path, not every Drawpile
-feature: native canvases are currently isolated per stroke; cross-stroke smudge,
-layer management UI, MyPaint preset selection, recording and collaboration are
-not exposed. Real ARM tablet latency and long-stroke benchmarks remain required.
+Local drawing features exposed in WE:
+- Layer creation, naming, visibility, locking, opacity, ordering, duplication and deletion.
+- Normal, multiply, screen, overlay, darken and lighten composition.
+- Classic and MyPaint engine presets, hardness, opacity, spacing, pressure and smudge controls.
+- Cross-stroke mixing on the current layer; local eraser and whole-stroke eraser.
+- Lines, rectangles, ellipses, exact-colour contiguous layer fill and eyedropper.
+- Whole-stroke selection move/scale/copy/delete, undo/redo, opaque/transparent PNG export.
+- Layer metadata and brush parameters saved with the page and used by editor, snapshots and MCP.
+
+This is an Android local drawing workspace, not the complete desktop Drawpile
+application. Multiplayer/session hosting, recording playback, arbitrary .myb
+preset import, textured brush packs, selection masks, raster selection transforms,
+and cross-layer colour sampling are not implemented. MyPaint choices are built-in
+parameter presets, not the desktop preset collection. Native working resolution
+is capped at 1536 pixels on the longest side; PNG export is capped at 2048.
+Only two layer canvases are cached at a time to bound native memory. Large layer
+counts and long sessions still require real ARM tablet latency measurements.

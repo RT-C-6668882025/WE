@@ -17,6 +17,8 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.opc.baize.agent.HomeInkStore
+import com.opc.baize.agent.WorkspaceDrawing
 import com.opc.baize.agent.WorkspaceFiles
 import com.opc.baize.agent.WeWorkspace
 import com.opc.baize.agent.LearningTurn
@@ -195,9 +197,11 @@ class MainActivity : Activity() {
         // 成功 → 停用 InkView 的输入与自绘、书写走驱动直写（写一点出一点）。任一步失败 →
         // hwLayer 保持 null，无缝回退 InkView 自绘+预测老路（非华为设备的常规路径）。
         // 生效与否全靠 adb logcat -s BaizeHW 判断。
-        // New input uses the shared workspace canvas; the home book retains archive viewing.
-        ink.visibility = View.GONE
+        // Home handwriting stays on this screen; drawing is a separate editor in the same workspace.
+        if (useDirectInk() && HwHandwritingLayer.isFrameworkPresent()) installHwLayer()
 
+
+        restoreHomeDraft()
 
         // 重启恢复：有存档静态重铺停末页；否则引导语走书写节奏
         book.post {
@@ -244,6 +248,8 @@ class MainActivity : Activity() {
     // 铁律 · 绝不能把面板留在快刷态离开 App：onPause/onStop/onDestroy 一律强制恢复高质量。
     // 直写层同理：退到后台前退出手写态，别把驱动直写（AHW）留在面板上。
     override fun onPause() {
+        saveHomeDraft()
+        cancelIdleTimer()
         super.onPause()
         stopIdlePolling()   // 直写轮询停笔检测：退到后台停，避免空转
         refresh.forceRestoreQuality()
@@ -384,10 +390,17 @@ class MainActivity : Activity() {
         root.addView(ink, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; homeInputs = inputs
-        fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; setOnClickListener { action() } }) }
-        inputButton("手写") { if (canSwitchTask()) openWorkspaceCanvas(false) }
-        inputButton("绘画") { if (canSwitchTask()) openWorkspaceCanvas(true) }
-        inputButton("打字") { if (canSwitchTask()) openWorkspaceCanvas(false,typing = true) }
+        fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; minWidth=0; minimumWidth=0; textSize=13f;setPadding(px(8f),px(4f),px(8f),px(4f));setOnClickListener { action() } }) }
+        inputButton("手写") { ink.visibility=View.VISIBLE; android.widget.Toast.makeText(this,"直接在首页书写",android.widget.Toast.LENGTH_SHORT).show() }
+        inputButton("发送") { if(canSwitchTask()) onIdleTimeout() }
+        inputButton("绘画") { if (canSwitchTask()) openWorkspaceDrawing() }
+        inputButton("打字") {
+            if(canSwitchTask()) {
+                val editor=android.widget.EditText(this).apply {hint="写下需求";minLines=2}
+                AlertDialog.Builder(this).setTitle("输入").setView(editor).setNegativeButton("取消",null)
+                    .setPositiveButton("发送") {_,_->submitText(editor.text.toString())}.show()
+            }
+        }
         root.addView(inputs, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = px(10f); bottomMargin = px(8f) })
         root.addView(seal, sealLp)
         setContentView(root)
@@ -412,8 +425,8 @@ class MainActivity : Activity() {
                 refresh.enterWriting()
                 if (statusState == "error") setStatus("idle")
             }
-            override fun onStrokeFinished() = startIdleTimer()
-            override fun onInkRemaining() = startIdleTimer()
+            override fun onStrokeFinished() {saveHomeDraft();startIdleTimer()}
+            override fun onInkRemaining() {saveHomeDraft();startIdleTimer()}
             override fun onSwipe(dir: Int) {
                 // 翻页前先出高质量：抬笔停顿态切回 GC16
                 refresh.exitWriting()
@@ -629,6 +642,7 @@ class MainActivity : Activity() {
         refresh.exitWriting()
         val snapshot = ink.snapshot()
         // 降级通道要的 PNG 必须在消散前、UI 线程上导出（快照数据独立离屏重绘）
+        archiveHomeInk(snapshot)
         val dataUrl = ink.exportInkDataUrl(snapshot)
         val stats = ink.stats(snapshot)
         val minBox = ink.minBoxPx()
@@ -884,10 +898,34 @@ class MainActivity : Activity() {
 
     // ---------- 长按左上角：清空全书 ----------
 
+    private fun saveHomeDraft() {
+        if(!::ink.isInitialized || hwActive() || ink.width<=0 || ink.height<=0) return
+        val session=Session(curSessionId,curSessionTs,curTurns.toList())
+        val draft=HomeInkStore.Draft(ink.width,ink.height,ink.draftSnapshot())
+        com.opc.baize.paper.PaperIo.executor.execute {runCatching {HomeInkStore.save(WorkspaceFiles(this).forSession(session),draft)}}
+    }
+    private fun restoreHomeDraft() {
+        if(hwActive()) return
+        val session=Session(curSessionId,curSessionTs,curTurns.toList())
+        com.opc.baize.paper.PaperIo.executor.execute {
+            val draft=runCatching {HomeInkStore.load(WorkspaceFiles(this).forSession(session))}.getOrNull() ?: return@execute
+            ui.post {ink.post {if(curSessionId==session.id) ink.restoreDraft(draft.width,draft.height,draft.strokes)}}
+        }
+    }
+    private fun archiveHomeInk(points: List<MutableList<InkView.Pt>>) {
+        val session=Session(curSessionId,curSessionTs,curTurns.toList())
+        val draft=HomeInkStore.Draft(ink.width.coerceAtLeast(1),ink.height.coerceAtLeast(1),points.map {it.toList()})
+        com.opc.baize.paper.PaperIo.executor.execute {runCatching {
+            val workspace=WorkspaceFiles(this).forSession(session)
+            HomeInkStore.archive(workspace,draft);HomeInkStore.save(workspace,draft.copy(strokes=emptyList()))
+        }}
+    }
+
     /** 清空当前书写层：直写层活着清 HWEditView，否则清 InkView。 */
     private fun clearWritingSurface() {
         val layer = hwLayer
         if (layer != null) layer.clear() else ink.clearAllInk()
+        saveHomeDraft()
     }
 
     private fun doClearAll() {
@@ -967,9 +1005,11 @@ class MainActivity : Activity() {
     private fun openHistorySession(s: Session) {
         cancelIdleTimer()
         refresh.exitWriting()
-        clearWritingSurface()
+        saveHomeDraft()
+        hwLayer?.clear() ?: ink.clearAllInk()
         if (hwActive()) { idleDetector.reset(); pollWasGrowing = false }
         resumeSessionState(s)
+        restoreHomeDraft()
         viewingSessionId = s.id
         // Turn 列表铺成书页：you=问、book=答（复用 BookView.loadFromStore 的页结构）
         val pages = mutableListOf<List<Pair<String, String>>>()
@@ -1415,7 +1455,7 @@ class MainActivity : Activity() {
                     if (!canSwitchTask()) return@setOnClickListener
                     val target = session ?: Session(files.sessionId(workspace) ?: "w_${workspace.id}", System.currentTimeMillis(), emptyList())
                     files.attachSession(workspace, target.id); files.manage(workspace, "open")
-                    openHistorySession(target); panelDialog?.dismiss(); openWorkspaceCanvas(prefs.getBoolean("paper_drawing_${workspace.id}",false),workspace)
+                    openHistorySession(target); panelDialog?.dismiss()
             }
             row.addView(info, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(android.widget.Button(this).apply {
@@ -1469,7 +1509,7 @@ class MainActivity : Activity() {
         val management = WorkspaceFiles(this).state(workspace)
         AlertDialog.Builder(this).setTitle(workspace.name)
             .setItems(arrayOf("打开最近学习页", "导入 PDF", "查看文件", "重命名", "移到回收站",
-                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档", "识别与批改记录")) { _, which ->
+                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档", "识别与批改记录", "继续绘画", "新建绘画")) { _, which ->
                 when (which) {
                     0 -> {
                         val pdf = LearningTurn.latestReady(workspace)
@@ -1498,6 +1538,8 @@ class MainActivity : Activity() {
                             }
                         } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this,e.message,android.widget.Toast.LENGTH_LONG).show() } }
                     }
+                    8 -> openWorkspaceDrawing(workspace)
+                    9 -> openWorkspaceDrawing(workspace,true)
                     3 -> {
                         val editor = android.widget.EditText(this).apply { setText(workspace.name) }
                         AlertDialog.Builder(this).setTitle("工作区名称").setView(editor).setNegativeButton("取消", null)
@@ -1511,7 +1553,7 @@ class MainActivity : Activity() {
     }
     private fun showWorkspaceFiles(workspace: WeWorkspace) {
         val entries = File(workspace.root, "memory/pages").walkTopDown().maxDepth(10)
-            .filter { it.isFile && it.extension.lowercase() in setOf("md", "txt", "pdf") }.take(200).toList()
+            .filter { it.isFile && it.extension.lowercase() in setOf("md", "txt", "pdf", "json") }.take(200).toList()
         AlertDialog.Builder(this).setTitle("${workspace.name} · 文件")
             .setItems(entries.map { it.relativeTo(workspace.root).path }.toTypedArray()) { _, index -> openWorkspaceFile(workspace, entries[index]) }
             .setNegativeButton("关闭", null).show()
@@ -1529,29 +1571,17 @@ class MainActivity : Activity() {
             } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this, e.message, android.widget.Toast.LENGTH_LONG).show() } }
         }
     }
-    private fun openWorkspaceCanvas(drawing: Boolean, selected: WeWorkspace? = null, typing: Boolean = false) {
-        val session = Session(curSessionId, curSessionTs, curTurns.toList())
+    private fun openWorkspaceDrawing(selected: WeWorkspace?=null,newDrawing: Boolean=false) {
+        val session=Session(curSessionId,curSessionTs,curTurns.toList())
+        cancelIdleTimer()
         worker.execute {
             try {
-                val workspace = selected ?: WorkspaceFiles(this).forSession(session)
-                val generated = LearningTurn.latestReady(workspace)
-                val saved = prefs.getString("paper_last_pdf_${workspace.id}",null)?.let { File(it).canonicalFile }
-                    ?.takeIf { it.isFile && it.path.startsWith(workspace.root.canonicalPath + "/memory/pages/") }
-                val latest = listOfNotNull(generated,saved).maxByOrNull { it.lastModified() }
-                if (latest != null) {
-                    ui.post { startActivity(android.content.Intent(this,com.opc.baize.paper.PaperActivity::class.java)
-                        .putExtra("workspace",workspace.id).putExtra("generatedPdf",latest.path)
-                        .putExtra("sourcePath",LearningTurn.sourcePath(latest)).putExtra("focusInput",typing).putExtra("entryMode",if (drawing) "drawing" else "handwriting")) }
-                } else {
-                    val page = org.json.JSONObject().put("we_page",1).put("mode",if (drawing) "drawing" else "handwriting")
-                        .put("blocks",org.json.JSONArray().put(org.json.JSONObject().put("id","canvas").put("type","drawing").put("height",500).put("grid","blank")))
-                    val turn = LearningTurn.prepare(workspace,"空白工作区画布",origin = "用户新建画布")
-                    turn.publishExternal(page.toString()) { source,pdf -> LearningPageRenderer.render(source,pdf,true) }
-                    ui.post { startActivity(android.content.Intent(this,com.opc.baize.paper.PaperActivity::class.java)
-                        .putExtra("workspace",workspace.id).putExtra("generatedPdf",turn.pdf.path)
-                        .putExtra("sourcePath",LearningTurn.sourcePath(turn.pdf)).putExtra("focusInput",typing).putExtra("entryMode",if (drawing) "drawing" else "handwriting")) }
-                }
-            } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this,"画布打开失败：${e.message}",android.widget.Toast.LENGTH_LONG).show() } }
+                val workspace=selected ?: WorkspaceFiles(this).forSession(session)
+                val drawing=WorkspaceDrawing.open(workspace,newDrawing)
+                ui.post {startActivity(android.content.Intent(this,com.opc.baize.paper.PaperActivity::class.java)
+                    .putExtra("workspace",workspace.id).putExtra("generatedPdf",drawing.pdf.path)
+                    .putExtra("sourcePath",drawing.sourcePath).putExtra("entryMode","drawing"))}
+            } catch(e:Exception) {ui.post {android.widget.Toast.makeText(this,"绘画打开失败：${e.message}",android.widget.Toast.LENGTH_LONG).show()}}
         }
     }
     @Deprecated("Platform callback")
@@ -1594,7 +1624,7 @@ class MainActivity : Activity() {
         )
         para("WE · Write Everything", 20f, inkDark)
         para("版本：${com.opc.baize.BuildConfig.VERSION_NAME}")
-        para("写下需求，继续工作。手写、绘画与打字从首页开始；工作区保存任务、资料和页面，供下次继续。")
+        para("写下需求，继续工作。首页直接手写与打字，绘画使用独立编辑器；同一工作区关联对话、资料、作品和生成页面。")
         para("项目维护：RT · RT-C-6668882025")
         para("协议：GPL-3.0")
         para("这是一款自由开源软件（GPL-3.0）。你可以自由使用、研究、修改与再分发，" +

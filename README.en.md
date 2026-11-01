@@ -6,13 +6,13 @@ WE is an Android handwriting and AI workspace application, built on [Moling](htt
 
 [Downloads](https://github.com/RT-C-6668882025/WE/releases) · [Release notes](docs/releases/) · [Issues](https://github.com/RT-C-6668882025/WE/issues) · [中文](README.md)
 
-Current source version: **v0.5.0 Preview**. See Releases for APKs actually available on GitHub.
+Current source version: **v0.6.0 Preview**. See Releases for APKs actually available on GitHub.
 
 ## The interface
 
-- **Home:** use handwriting, drawing or typing. Drawing does not trigger AI on pen pause by default; voice comes from your keyboard.
-- **Workspaces:** browse and resume previous tasks. Existing conversation archives are retained. Selecting a task restores its identity and recent conversation context.
-- **Workspace documents:** view files, import PDFs, open the latest learning paper, rename or delete the workspace.
+- **Home:** write directly and press Send, or type in place. Drawing opens an independent editor in the same task. Automatic recognition is opt-in. Software Home drafts are saved per task.
+- **Workspaces:** browse and resume previous tasks. Existing conversation archives are retained. Selecting a task restores its identity, Home conversation and handwriting draft without navigating to a canvas.
+- **Workspace documents:** view files, import PDFs, open learning papers, continue or create an independent drawing, rename or delete the workspace.
 - **Settings:** configure models, subscription login, recognition, handwriting and appearance. Separate PDF and Skill/MCP workbench entries have been removed.
 - **About:** WE project information, licensing and upstream credits.
 
@@ -85,3 +85,5 @@ Maintained by **RT · [RT-C-6668882025](https://github.com/RT-C-6668882025)**.
 WE retains **GPL-3.0**; see [LICENSE](LICENSE). Third-party code and fonts retain their respective licenses.
 
 Handwriting and drawing share one workspace canvas. Manual send is the default; scope, editable instruction presets and opt-in auto recognition are explicit. Drawing runs the upstream Drawdance brush/message/tile-canvas pipeline through JNI. Run `bash tools/fetch-native-sources.sh` before building. See [scope](docs/third-party/drawpile.md).
+
+The first xnotes extraction reuses MIT-licensed affine geometry for selection transforms. See [integration audit](docs/research/editor-integration.md). Jetpack Ink live-authoring adaptation is still under evaluation.

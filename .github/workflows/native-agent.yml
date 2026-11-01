@@ -43,6 +43,11 @@ jobs:
           node-version: '22'
       - name: Fetch pinned Drawpile and Zstandard native sources
         run: bash tools/fetch-native-sources.sh
+      - name: Verify the native drawing contract
+        run: |
+          cmake -S app/src/main/cpp -B build/drawing-native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/drawing-native --parallel 2
+          ctest --test-dir build/drawing-native --output-on-failure
       - name: Verify the paired MCP relay
         run: node --test mcp/relay.test.mjs
       - name: Unit tests, lint, app and device test builds
@@ -61,7 +66,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
           script: |
-            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest,com.opc.baize.mcp.McpDeviceTest --no-daemon
+            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest,com.opc.baize.mcp.McpDeviceTest,com.opc.baize.paper.DrawingDeviceTest --no-daemon
             bash tools/check-persistent-session-device.sh
       - uses: actions/upload-artifact@v4
         if: always()
@@ -93,11 +98,11 @@ jobs:
       - name: Download the tested APK from this exact run
         run: |
           gh run download "$GITHUB_RUN_ID" --name we-android-native-agent-apk --dir apk
-          mv apk/app-debug.apk apk/WE-v0.5.0-preview.apk
+          mv apk/app-debug.apk apk/WE-v0.6.0-preview.apk
           cd apk
-          sha256sum WE-v0.5.0-preview.apk > SHA256SUMS.txt
+          sha256sum WE-v0.6.0-preview.apk > SHA256SUMS.txt
       - name: Publish WE preview
         run: |
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
-          gh release create v0.5.0-we-preview apk/WE-v0.5.0-preview.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "WE v0.5.0 Preview" --notes-file docs/releases/v0.5.0.md
+          gh release create v0.6.0-we-preview apk/WE-v0.6.0-preview.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "WE v0.6.0 Preview" --notes-file docs/releases/v0.6.0.md

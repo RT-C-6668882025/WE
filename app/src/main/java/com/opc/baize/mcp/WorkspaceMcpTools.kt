@@ -159,7 +159,7 @@ class WorkspaceMcpTools(private val context: Context,
                 val ink = repository.load(id, page, rendered.width, rendered.height)
                 val canvas = Canvas(rendered.bitmap)
                 canvas.scale(rendered.bitmap.width.toFloat() / rendered.width, rendered.bitmap.height.toFloat() / rendered.height)
-                ink.strokes.forEach { com.opc.baize.paper.PaperStrokeRenderer.draw(canvas, it) }
+                com.opc.baize.paper.LayerRenderer().use { it.draw(canvas,ink) }
                 val bytes = java.io.ByteArrayOutputStream(); rendered.bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bytes)
                 require(bytes.size() <= 450000) { "Image too large" }
                 val data = JSONObject().put("document_id", id).put("page_count", engine.pageCount).put("page", page)

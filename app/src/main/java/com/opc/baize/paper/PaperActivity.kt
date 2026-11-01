@@ -69,6 +69,7 @@ class PaperActivity : Activity() {
     private var visionGeneration = 0
     private var visionTask: java.util.concurrent.Future<*>? = null
     private lateinit var instructionButton: Button
+    private var pendingExport: String? = null
     private var chooseTool: (PaperInkView.Mode) -> Unit = {}
     private val readyListener: (String,java.io.File) -> Unit = { owner,pdf ->
         handler.post { if (!destroyed && workspaceId == owner) {
@@ -82,7 +83,7 @@ class PaperActivity : Activity() {
         stopButton.visibility = if (busy) android.view.View.VISIBLE else android.view.View.GONE
     }
     override fun onCreate(state: Bundle?) {
-        super.onCreate(state); repository = PaperRepository(this)
+        super.onCreate(state); pendingExport=state?.getString("drawing_export"); repository = PaperRepository(this)
         workspaceId = intent.getStringExtra("workspace")
         command = prefs.getInt("paper_command", 0).coerceIn(0,3)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -121,7 +122,7 @@ class PaperActivity : Activity() {
             if (ink.mode == PaperInkView.Mode.SELECT || ink.hasSelection) { ink.clearSelection(); scopeChoice.setSelection(0); chooseTool(PaperInkView.Mode.WRITE); status.text = "已取消框选，发送范围恢复整页。" }
             else { scopeChoice.setSelection(1); chooseTool(PaperInkView.Mode.SELECT); status.text = "拖出矩形；再次点框选或轻点纸面取消。" }
         }
-        modes[PaperInkView.Mode.ERASE] = button(tools,"橡皮") { chooseTool(PaperInkView.Mode.ERASE); status.text = "蓝色圆圈是擦除范围；当前擦除整条笔迹，可撤销。" }
+        modes[PaperInkView.Mode.ERASE] = button(tools,"橡皮") { chooseTool(PaperInkView.Mode.ERASE); status.text = if(ink.pixelEraser) "局部橡皮：仅擦除当前图层，可撤销。" else "整笔橡皮：仅擦除当前图层，可撤销。" }
         button(tools,"撤销") { if (!loading) ink.undo() }
         button(tools,"笔刷") { showBrushPanel() }
         button(tools,"居中") { ink.resetView() }
@@ -191,6 +192,17 @@ class PaperActivity : Activity() {
     @Deprecated("Platform result callback retained to avoid introducing an Activity framework")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if(requestCode==53) {
+            val path=pendingExport;pendingExport=null
+            val file=path?.let {java.io.File(it)}
+            if(resultCode==RESULT_OK && data?.data!=null && file?.isFile==true) {
+                val uri=data.data!!
+                io.execute {try { contentResolver.openOutputStream(uri,"w")!!.use {out -> file.inputStream().use {it.copyTo(out)}}
+                    message("PNG 已导出。")
+                } catch(_:Exception) {message("导出失败，请重试。")} finally {file.delete()} }
+            } else file?.delete()
+            return
+        }
         if (requestCode != 51 || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         if (loading) return
@@ -321,6 +333,12 @@ class PaperActivity : Activity() {
         }
     }
     private fun setInputMode(drawing: Boolean) {
+        if(drawing) {
+            ink.penColor=prefs.getInt("drawing_color",Color.BLACK)
+            ink.brushSettings=try {BrushSettings.decode(prefs.getString("drawing_brush",null)?.let {JSONObject(it)})} catch(_:Exception) {BrushSettings()}
+        } else ink.brushSettings=BrushSettings()
+        ink.pixelEraser=drawing
+        ink.drawingTool="freehand"
         ink.brushEngine = if (drawing) DrawdanceBrush.ENGINE else "vector"
         ink.penWidth = if (drawing) prefs.getFloat("drawing_width",5f) else prefs.getFloat("handwriting_width",1.8f)
         modeButton.text = if (drawing) "绘画 ▾" else "手写 ▾"
@@ -378,7 +396,9 @@ class PaperActivity : Activity() {
                 }
             }.show()
     }
+    private fun drawingPanels()=DrawingPanels(this,ink) {chooseTool(PaperInkView.Mode.WRITE)}
     private fun showBrushPanel() {
+        if(ink.brushEngine==DrawdanceBrush.ENGINE) {drawingPanels().brushes();return}
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24,12,24,12) }
         val colors = intArrayOf(Color.BLACK,Color.rgb(25,85,175),Color.rgb(190,40,40),Color.rgb(35,125,75))
         val color = Spinner(this).apply {
@@ -401,7 +421,7 @@ class PaperActivity : Activity() {
     }
     private fun showCanvasMenu() {
         AlertDialog.Builder(this).setTitle("画布")
-            .setItems(arrayOf("导入 PDF","单指移动","修改生成内容","画布设置","操作说明","返回工作区")) { _,which ->
+            .setItems(arrayOf("导入 PDF","单指移动","修改生成内容","画布设置","操作说明","返回工作区","图层","绘画工具","重做","导出 PNG","导出透明 PNG")) { _,which ->
                 when(which) {
                     0 -> if (!loading) startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "application/pdf"; addCategory(Intent.CATEGORY_OPENABLE) },51)
                     1 -> { chooseTool(PaperInkView.Mode.MOVE); status.text = "单指拖动画布；也可随时双指移动。" }
@@ -412,11 +432,29 @@ class PaperActivity : Activity() {
                             ink.stylusOnly = toggle.isChecked; prefs.edit().putBoolean("paper_stylus_only",toggle.isChecked).apply()
                         }.show()
                     }
-                    4 -> AlertDialog.Builder(this).setTitle("操作说明").setMessage("手写与绘画共用当前工作区、页面和笔迹；模式只改变接下来的笔刷。\n双指捏合缩放、双指拖动画布；居中恢复整页视图。\n框选后选择“选区”再发送；再次点框选或在框选模式下轻点纸面可取消。\n橡皮蓝圈表示范围，擦掉整条笔迹；一趟擦除可一次撤销。\n发送范围可选整页、选区、仅文字。指令预设与系统提示词都能编辑。\n默认手动发送；自动识别开启后才会停笔处理。\n修改生成内容可直接编辑文字、留白、图形参数并另存版本。\n识别与批改记录在工作区中查看。")
+                    4 -> AlertDialog.Builder(this).setTitle("操作说明").setMessage("手写与绘画共用当前工作区、页面和笔迹；模式只改变接下来的笔刷。\n双指捏合缩放、双指拖动画布；居中恢复整页视图。\n框选后选择“选区”再发送；再次点框选或在框选模式下轻点纸面可取消。\n橡皮蓝圈表示范围。绘画默认局部擦除，手写默认整笔擦除；仅影响当前图层，可撤销／重做。\n菜单提供图层、绘画工具和 PNG 导出；笔刷面板可调色、压感、混色和 MyPaint。\n发送范围可选整页、选区、仅文字。指令预设与系统提示词都能编辑。\n默认手动发送；自动识别开启后才会停笔处理。\n修改生成内容可直接编辑文字、留白、图形参数并另存版本。\n识别与批改记录在工作区中查看。")
                         .setPositiveButton("关闭",null).show()
                     5 -> finish()
+                    6 -> if(!loading) drawingPanels().layers()
+                    7 -> if(!loading) drawingPanels().tools()
+                    8 -> if(!loading) ink.redo()
+                    9,10 -> if(!loading) exportDrawing(which==10)
                 }
             }.show()
+    }
+    private fun exportDrawing(transparent: Boolean) {
+        try {
+            val bitmap=ink.exportBitmap(transparent)
+            val file=java.io.File.createTempFile("we-drawing-",".png",cacheDir)
+            try {file.outputStream().use {check(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))}} finally {bitmap.recycle()}
+            pendingExport?.let {java.io.File(it).delete()};pendingExport=file.path
+            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                type="image/png";addCategory(Intent.CATEGORY_OPENABLE);putExtra(Intent.EXTRA_TITLE,"WE-drawing.png")
+            },53)
+        } catch(_:Exception) {status.text="导出失败，请先打开页面。"}
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("drawing_export",pendingExport);super.onSaveInstanceState(outState)
     }
     private fun editGeneratedContent() {
         if (loading || submitting || studyJob?.isActive == true) { status.text = "请等待当前操作完成后修改内容。"; return }
