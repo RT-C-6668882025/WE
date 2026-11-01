@@ -52,16 +52,18 @@ class McpWebViewDeviceTest {
             })
         }}
         server.start()
+        val fixtureUrl=server.url("/").toString()
+        val fixtureRelay=fixtureUrl.trimEnd('/')
         var activity:android.app.Activity?=null;var browser:WebView?=null
         try {
             val opened=instrumentation.startActivitySync(android.content.Intent(context,McpSettingsActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
             activity=opened
             instrumentation.runOnMainSync {
-                val bridge=FixtureBridge(opened,server.url("/").toString().trimEnd('/'))
+                val bridge=FixtureBridge(opened,fixtureRelay)
                 // Accept only this generated local fixture certificate; production client never overrides TLS errors.
                 val client=object:McpWebPageClient(opened){override fun onReceivedSslError(view:WebView,handler:SslErrorHandler,error:android.net.http.SslError){
                     val expected=android.net.http.SslCertificate(held.certificate)
-                    if(error.url.startsWith(server.url("/").toString()) && error.certificate.issuedTo.dName==expected.issuedTo.dName)handler.proceed() else handler.cancel()
+                    if(error.url.startsWith(fixtureUrl) && error.certificate.issuedTo.dName==expected.issuedTo.dName)handler.proceed() else handler.cancel()
                 }}
                 val page=McpWebPage.create(opened,bridge,client);bridge.page=page;browser=page;opened.setContentView(page)
             }

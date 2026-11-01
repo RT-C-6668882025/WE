@@ -23,7 +23,7 @@ class McpPublicRelayDeviceTest {
             val page=McpBrowserTestSupport.webView(opened)
             McpBrowserTestSupport.waitReady(instrumentation,page)
             val result=McpBrowserTestSupport.run(instrumentation,page,
-                "try{await window.weConnection.connectAi('${McpConnectionConfig.DEFAULT_RELAY}');return 'paired';}catch(e){return e.message==='Failed to fetch'?'public-fetch-failed':'public-pairing-failed';}")
+                "try{await window.weConnection.connectAi('${McpConnectionConfig.DEFAULT_RELAY}');return 'paired';}catch(e){const we=e.message==='Failed to fetch'?'we-fetch-failed':'we-pairing-failed';try{const r=await fetch('https://wordrelay.dpdns.org:8443/health',{signal:AbortSignal.timeout(15000)});return we+';wordtok-health-http-'+r.status;}catch{return we+';wordtok-fetch-failed';}}")
             pairing=store.read()
             assertEquals("Production WebView fetch could not pair with WE public relay", "\"paired\"",result)
             val saved=requireNotNull(pairing)
