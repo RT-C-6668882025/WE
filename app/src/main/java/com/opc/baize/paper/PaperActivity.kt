@@ -280,7 +280,9 @@ class PaperActivity : Activity() {
                     nextPage.visibility = previousPage.visibility
                     previousPage.isEnabled = index > 0; nextPage.isEnabled = index+1 < count
                     prefs.edit().putString("paper_last_document_${workspaceId.orEmpty()}", id).putInt("paper_last_page_${workspaceId.orEmpty()}",index).apply()
-                    ink.load(result.first, result.second); ink.isEnabled = true; loading = false; attachCanvas()
+                    // An MCP commit may have completed after the IO snapshot was decoded.
+                    val latest=repository.load(id,index,result.second.width,result.second.height)
+                    ink.load(result.first,latest); ink.isEnabled = true; loading = false; attachCanvas()
                     pageLabel.text = "第 ${index + 1} / $count 页 · 笔迹自动保存"
                     prefs.edit().putString("paper_last_document", id).putInt("paper_last_page", index).apply()
                     status.text = if (autoRecognize) "写下答案或修改要求，停笔后自动继续。" else "已恢复笔迹。可离线书写。"

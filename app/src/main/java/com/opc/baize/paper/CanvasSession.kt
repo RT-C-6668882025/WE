@@ -19,7 +19,12 @@ object CanvasSession {
         return try {task.get(10,TimeUnit.SECONDS)} catch(e:Exception) {task.cancel(false);throw e}
     }
     fun context(workspace: String): JSONObject? = main {editor?.takeIf {it.workspace==workspace}?.context?.invoke()}
-    fun change(workspace: String,document: String,page: Int,expected: Long,call: (PaperPage)->PaperPage): PaperPage? = main {
-        editor?.takeIf {it.workspace==workspace && it.document==document && it.page==page}?.change?.invoke(expected,call)
+    fun change(workspace: String,document: String,page: Int,expected: Long,
+        call: (PaperPage)->PaperPage, offline: ()->PaperPage): PaperPage = main {
+        // Decide foreground/background ownership on the UI thread, after all prior local saves.
+        // A pause/resume or final pen-up cannot slip between this decision and the commit.
+        PaperIo.executor.submit {}.get(2,TimeUnit.SECONDS)
+        val current=editor?.takeIf {it.workspace==workspace && it.document==document && it.page==page}
+        if(current!=null) current.change(expected,call) else offline()
     }
 }

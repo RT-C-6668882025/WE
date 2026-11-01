@@ -67,7 +67,7 @@ class CanvasMcpTools(private val context: Context) {
                                 repository.history(id,index,rendered.width,rendered.height,expected,action=="redo")
                             }
                         }
-                        val updated=CanvasSession.change(w.id,id,index,expected,change) ?: change(saved())
+                        val updated=CanvasSession.change(w.id,id,index,expected,change) {change(saved())}
                         metadata(updated).put("saved",true)
                     }
                     "export_canvas" -> {
