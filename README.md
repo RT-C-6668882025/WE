@@ -6,7 +6,7 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 
 [下载安装包](https://github.com/RT-C-6668882025/WE/releases) · [版本记录](docs/releases/) · [反馈问题](https://github.com/RT-C-6668882025/WE/issues) · [English](README.en.md)
 
-当前源码版本：**v0.6.1 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
+当前源码版本：**v0.6.2 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
 
 开发状态与后续安排：[待办清单](docs/ROADMAP.md) · [MCP 能力与接入准备](mcp/capabilities.md)。
 
@@ -55,7 +55,7 @@ MCP 优先生成可直接落笔的内容：题目配答题留白，正文旁留�
 
 新增对外 MCP：设置 → **Agent 连接 · MCP**。同一 Android 的原生客户端可直接连接本机端点；外部 Agent 可读工作区与手写页面图像、读写资料/Skill，并发布新的学习页。写入有 operation_id 回执和版本检查，原页与笔迹保留。
 
-WordTok 式固定公网地址采用“HTTPS 中继转发、Android 执行”的配对结构，源码及部署步骤见 [MCP 连接](mcp/README.md)。**没有预先托管的 WE 公网域名，需先独立部署中继；不能使用 WordTok 原地址。** 本机地址不能从云端直接访问。
+WordTok 式固定公网地址采用“HTTPS 中继转发、Android 执行”的配对结构，源码及部署步骤见 [MCP 连接](mcp/README.md)。公网中继已预设为 `https://we.wordrelay.dpdns.org`；进入 MCP 设置点击“复制 MCP 地址”即可自动配对、开启连接并复制。已有配对和固定地址保留；不能使用 WordTok 原地址。
 
 当前生成页面以文本学习纸为主。可编辑图形框架、任意 Python/Node Skill 脚本、MCP OAuth 和 stdio 传输尚未支持。DSH Go、RikkaHub、Excalidraw 和 Jetpack Ink 为已研究的候选，未集成。具体见 [实现、验证与边界](docs/research/continuous-learning.md)。Google Drive 同步暂未接入。
 

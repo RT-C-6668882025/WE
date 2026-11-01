@@ -8,6 +8,8 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /** Only transports commands and device receipts. Model execution stays outside this transport. */
+internal class PairingRevokedException : Exception("配对已失效")
+
 internal class McpRelayClient(private val base: String, private val token: String, private val tools: WorkspaceMcpTools) : java.io.Closeable {
     private val client = http()
     @Volatile private var active: Call? = null
@@ -39,7 +41,8 @@ internal class McpRelayClient(private val base: String, private val token: Strin
         val call = client.newCall(request.build()); active = call
         if (closed) call.cancel()
         return call.execute().use { response ->
-            check(response.isSuccessful) { if (response.code == 401) "配对已失效" else "中继 HTTP ${response.code}" }
+            if(response.code==401) throw PairingRevokedException()
+            check(response.isSuccessful) { "中继 HTTP ${response.code}" }
             val body = requireNotNull(response.body)
             body.byteStream().use { input ->
                 val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
@@ -62,7 +65,7 @@ internal class McpRelayClient(private val base: String, private val token: Strin
             try {
                 http.newCall(Request.Builder().url("$base/health").build()).execute().use {
                     require(it.isSuccessful); val health = JSONObject(requireNotNull(it.body).string())
-                    require(health.optString("name") == "write-everything" && health.optBoolean("persistent")) { "此地址不是持久化 WE 中继，请勿填写 WordTok 地址" }
+                    require(health.optString("name") == "write-everything" && health.optInt("protocol")==2 && health.optBoolean("persistent")) { "此地址不是持久化 WE 中继，请勿填写 WordTok 地址" }
                 }
                 return http.newCall(Request.Builder().url("$base/pair").post("{}".toRequestBody("application/json".toMediaType())).build()).execute().use {
                     require(it.isSuccessful); val p = JSONObject(requireNotNull(it.body).string())

@@ -6,7 +6,7 @@ WE is an Android handwriting and AI workspace application, built on [Moling](htt
 
 [Downloads](https://github.com/RT-C-6668882025/WE/releases) · [Release notes](docs/releases/) · [Issues](https://github.com/RT-C-6668882025/WE/issues) · [中文](README.md)
 
-Current source version: **v0.6.1 Preview**. See Releases for APKs actually available on GitHub.
+Current source version: **v0.6.2 Preview**. See Releases for APKs actually available on GitHub.
 
 ## The interface
 
@@ -87,3 +87,5 @@ WE retains **GPL-3.0**; see [LICENSE](LICENSE). Third-party code and fonts retai
 Handwriting and drawing share one workspace canvas. Manual send is the default; scope, editable instruction presets and opt-in auto recognition are explicit. Drawing runs the upstream Drawdance brush/message/tile-canvas pipeline through JNI. Run `bash tools/fetch-native-sources.sh` before building. See [scope](docs/third-party/drawpile.md).
 
 The first xnotes extraction reuses MIT-licensed affine geometry for selection transforms. See [integration audit](docs/research/editor-integration.md). Jetpack Ink live-authoring adaptation is still under evaluation.
+
+MCP quick connection: Settings → Agent connection · MCP → Copy MCP address. The app pairs with the default WE relay, reuses the encrypted identity, starts the device service and copies one URL. Local configuration and unpairing are under Advanced settings.

@@ -52,6 +52,16 @@ jobs:
         run: node --test mcp/relay.test.mjs
       - name: Unit tests, lint, app and device test builds
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --no-daemon
+      - name: Probe configured WE public relay
+        continue-on-error: true
+        run: |
+          node --input-type=module <<'JS'
+          const response = await fetch('https://we.wordrelay.dpdns.org/health', {signal: AbortSignal.timeout(15000)});
+          if (!response.ok) throw new Error(`WE relay health HTTP ${response.status}`);
+          const h = await response.json();
+          console.log(JSON.stringify({name:h.name, protocol:h.protocol, persistent:h.persistent}));
+          if (h.name !== 'write-everything' || h.protocol !== 2 || h.persistent !== true) throw new Error('Incompatible WE relay');
+          JS
       - name: Enable KVM
         run: sudo chmod 666 /dev/kvm
       - name: Run the complete agent contract inside Android
@@ -98,11 +108,11 @@ jobs:
       - name: Download the tested APK from this exact run
         run: |
           gh run download "$GITHUB_RUN_ID" --name we-android-native-agent-apk --dir apk
-          mv apk/app-debug.apk apk/WE-v0.6.1-preview.apk
+          mv apk/app-debug.apk apk/WE-v0.6.2-preview.apk
           cd apk
-          sha256sum WE-v0.6.1-preview.apk > SHA256SUMS.txt
+          sha256sum WE-v0.6.2-preview.apk > SHA256SUMS.txt
       - name: Publish WE preview
         run: |
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
-          gh release create v0.6.1-we-preview apk/WE-v0.6.1-preview.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "WE v0.6.1 Preview" --notes-file docs/releases/v0.6.1.md
+          gh release create v0.6.2-we-preview apk/WE-v0.6.2-preview.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "WE v0.6.2 Preview" --notes-file docs/releases/v0.6.2.md

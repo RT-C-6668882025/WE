@@ -33,8 +33,12 @@ class McpService : Service() {
         else startForeground(4401, notification)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == STOP) { stopSelf(); return START_NOT_STICKY }
-        if (started) return START_NOT_STICKY
+        if (intent?.action == STOP) { getSharedPreferences("we-mcp",MODE_PRIVATE).edit().putBoolean("enabled",false).apply();status="已停止";stopSelf(); return START_NOT_STICKY }
+        if (started) {
+            if(relay==null) worker.execute { if(relay==null && !stopped) runRelay(WorkspaceMcpTools(this)) }
+            return START_STICKY
+        }
+        getSharedPreferences("we-mcp",MODE_PRIVATE).edit().putBoolean("enabled",true).apply()
         started = true
         worker.execute {
             try {
@@ -45,23 +49,28 @@ class McpService : Service() {
                 if (stopped) { http.stop(); return@execute }
                 localToken = token; running = true
                 status = "本机 MCP 已就绪"
-                val pairing = McpPairing(this).read()
-                if (pairing != null) {
-                    val connection = McpRelayClient(McpRelayClient.validateBase(pairing.getString("base")), pairing.getString("deviceToken"), tools); relay = connection
-                    var failures = 0
-                    while (!stopped) {
-                        try { connection.poll(); failures = 0; status = "公网 MCP 已连接 · 本机 MCP 已就绪" }
-                        catch (_: Exception) { if (stopped) break; failures++; status = "中继连接中断，正在重连 · 本机 MCP 已就绪" }
-                        try { Thread.sleep(if (failures > 0) minOf(30000L, 2000L * failures) else 500L) } catch (_: InterruptedException) { break }
-                    }
-                }
+                runRelay(tools)
             } catch (_: Exception) { status = "连接未启动，请检查端口占用或配对配置后重试"; stopSelf() }
         }
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+    private fun runRelay(tools:WorkspaceMcpTools) {
+        val pairing=McpPairing(this).read() ?: return
+        val connection=McpRelayClient(McpRelayClient.validateBase(pairing.getString("base")),pairing.getString("deviceToken"),tools)
+        status="正在连接…"
+        relay=connection
+        var failures=0
+        while(!stopped) {
+            try {connection.poll();failures=0;status="MCP 已连接"}
+            catch(_:PairingRevokedException) {status="配对已失效，请在高级设置中重新配对";break}
+            catch(_:Exception) {if(stopped) break;failures++;status="正在重新连接…"}
+            try {Thread.sleep(if(failures>0) minOf(30000L,2000L*failures) else 500L)} catch(_:InterruptedException) {break}
+        }
+        connection.close()
     }
     override fun onDestroy() {
         stopped = true; relay?.close(); server?.stop(); worker.shutdownNow(); running = false; localToken = ""
-        if (status.startsWith("本机") || status.startsWith("公网") || status.startsWith("中继")) status = "已停止"
+        if(!status.startsWith("连接未启动") && !status.startsWith("配对已失效")) status = "已停止"
         stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy()
     }
 }
