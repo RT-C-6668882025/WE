@@ -40,6 +40,8 @@ class WorkspaceMcpTools(private val context: Context,
             val value = args.get(key)
             if ((type == "string" && value !is String) || (type == "integer" && value !is Int && value !is Long))
                 return@synchronized failure("Invalid argument type: $key")
+            if (type == "array" && value !is JSONArray) return@synchronized failure("Invalid array: $key")
+            if (type == "boolean" && value !is Boolean) return@synchronized failure("Invalid boolean: $key")
             if (type == "object" && value !is JSONObject) return@synchronized failure("Invalid object: $key")
         }
         if (name == "get_operation_result") return@synchronized receipt(args.getString("request_id"))
@@ -146,6 +148,7 @@ class WorkspaceMcpTools(private val context: Context,
                 .put("layout_path", "/memory/pages/${turn.pdf.nameWithoutExtension}.layout.json")
         }
         "read_page" -> readPage(workspace(a), a)
+        "list_canvases", "create_canvas", "get_canvas_context", "edit_canvas", "canvas_history", "export_canvas" -> CanvasMcpTools(context).call(name,a)
         else -> error("Unsupported tool")
     }
     private fun readPage(w: WeWorkspace, a: JSONObject): JSONObject {

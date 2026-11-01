@@ -98,6 +98,14 @@ class PaperActivity : Activity() {
         }
         ink = PaperInkView(this)
         ink.stylusOnly = prefs.getBoolean("paper_stylus_only", false)
+        ink.historyRequest = { redo ->
+            val id=document
+            if(id!=null && !loading && ink.canAcceptExternal) try {
+                val next=PaperRepository(this).history(id,pageIndex,ink.page.width,ink.page.height,ink.page.revision,redo)
+                ink.acceptExternal(next); interactionVersion++
+                status.text=if(redo) "已重做" else "已撤销"
+            } catch(e:Exception) { status.text="暂未撤销／重做：${e.message}" }
+        }
         val top = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
         button(top,"工作区") { finish() }
         val workspaceName = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id }?.name } ?: "画布"
@@ -191,7 +199,7 @@ class PaperActivity : Activity() {
             text = "新页面已就绪 · 打开"; visibility = android.view.View.GONE
             setOnClickListener {
                 val w = workspaceId?.let { id -> WorkspaceFiles(this@PaperActivity).list().find { it.id == id } }
-                val pdf = w?.let { LearningTurn.latestReady(it) } ?: readyPdf
+                val pdf = readyPdf ?: w?.let { LearningTurn.latestReady(it) }
                 if (pdf != null && w != null) openGenerated(pdf,w.id,LearningTurn.sourcePath(pdf))
             }
         }; root.addView(generatedButton)
@@ -241,11 +249,12 @@ class PaperActivity : Activity() {
                     prefs.edit().putString("paper_workspace_$id",ownerId).remove("paper_source_$id").putString("paper_last_pdf_$ownerId",copy.path).apply()
                 }
                 runOnUiThread { if (!destroyed) { loading = false; load(id, 0) } }
-            } catch (e: Exception) { runOnUiThread { if (!destroyed) { loading = false; ink.isEnabled = true; status.text = "PDF 导入失败，请检查文件格式或大小（最多 100MB）。" } } }
+            } catch (e: Exception) { runOnUiThread { if (!destroyed) { loading = false; ink.isEnabled = true; attachCanvas(); status.text = "PDF 导入失败，请检查文件格式或大小（最多 100MB）。" } } }
         }
     }
     private fun load(id: String, requestedPage: Int) {
         if (loading || destroyed) return
+        CanvasSession.detach(this)
         handler.removeCallbacks(recognizeLater)
         interactionVersion++
         loading = true; ink.isEnabled = false; status.text = "正在读取 PDF 和笔迹……"
@@ -271,13 +280,13 @@ class PaperActivity : Activity() {
                     nextPage.visibility = previousPage.visibility
                     previousPage.isEnabled = index > 0; nextPage.isEnabled = index+1 < count
                     prefs.edit().putString("paper_last_document_${workspaceId.orEmpty()}", id).putInt("paper_last_page_${workspaceId.orEmpty()}",index).apply()
-                    ink.load(result.first, result.second); ink.isEnabled = true; loading = false
+                    ink.load(result.first, result.second); ink.isEnabled = true; loading = false; attachCanvas()
                     pageLabel.text = "第 ${index + 1} / $count 页 · 笔迹自动保存"
                     prefs.edit().putString("paper_last_document", id).putInt("paper_last_page", index).apply()
                     status.text = if (autoRecognize) "写下答案或修改要求，停笔后自动继续。" else "已恢复笔迹。可离线书写。"
                 }
             } catch (e: Exception) { runOnUiThread { if (!destroyed) {
-                loading = false; ink.isEnabled = true
+                loading = false; ink.isEnabled = true; attachCanvas()
                 status.text = "无法打开此页：文件可能加密、损坏，或笔迹文件不匹配。原文件已保留。"
             } } }
         }
@@ -351,7 +360,7 @@ class PaperActivity : Activity() {
                     loading = false; load(id,if (previous == id) prefs.getInt("paper_last_page_$workspace",0) else 0)
                 } }
             } catch (e: Exception) { runOnUiThread { if (!destroyed) {
-                loading = false; ink.isEnabled = true; status.text = "学习页打开失败，原文件已保留。"
+                loading = false; ink.isEnabled = true; attachCanvas(); status.text = "学习页打开失败，原文件已保留。"
             } } }
         }
     }
@@ -445,6 +454,41 @@ class PaperActivity : Activity() {
             chooseTool(PaperInkView.Mode.WRITE)
         }.show()
     }
+    private fun attachCanvas() {
+        val id=document ?: return; val owner=workspaceId ?: return
+        if(loading || destroyed || !hasWindowFocus()) return
+        val index=pageIndex
+        CanvasSession.attach(CanvasSession.Editor(this,owner,id,index,{
+            ink.context().put("workspace_id",owner).put("document_id",id).put("page",index)
+                .put("path",prefs.getString("paper_last_pdf_$owner",null)?.let { path ->
+                    currentWorkspace()?.let { "/"+java.io.File(path).relativeTo(it.root).path }
+                } ?: JSONObject.NULL)
+        },{ expected,change ->
+            require(!loading && document==id && pageIndex==index && ink.canAcceptExternal && ink.page.revision==expected) { "Canvas is busy or revision changed; read again" }
+            val next=change(ink.page)
+            ink.acceptExternal(next); interactionVersion++; handler.removeCallbacks(recognizeLater)
+            status.text="AI 已更新当前画布 · 版本 ${next.revision}"
+            next
+        }))
+    }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if(hasFocus && ::ink.isInitialized) attachCanvas()
+    }
+    override fun onResume() {
+        super.onResume()
+        if(::ink.isInitialized) {
+            val id=document
+            if(id!=null && !loading && ink.canAcceptExternal) {
+                try {
+                    val next=PaperRepository(this).load(id,pageIndex,ink.page.width,ink.page.height)
+                    if(next.revision>ink.page.revision) ink.acceptExternal(next)
+                } catch(e:Exception) {status.text="画布同步失败，当前笔迹保留：${e.message}"}
+            }
+            attachCanvas()
+        }
+    }
+    override fun onPause() { CanvasSession.detach(this); super.onPause() }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private fun currentWorkspace() = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id } }
@@ -478,7 +522,7 @@ class PaperActivity : Activity() {
 
     private fun showCanvasMenu() {
         AlertDialog.Builder(this).setTitle("画布菜单")
-            .setItems(arrayOf("居中显示","修改生成内容","画布设置","导出图片","工作区对话","操作说明")) { _,which ->
+            .setItems(arrayOf("居中显示","修改生成内容","画布设置","导出图片","工作区对话","AI 模型设置","操作说明")) { _,which ->
                 when(which) {
                     0 -> ink.resetView()
                     1 -> editGeneratedContent()
@@ -491,7 +535,9 @@ class PaperActivity : Activity() {
                     3 -> AlertDialog.Builder(this).setTitle("导出图片")
                         .setItems(arrayOf("PNG","透明 PNG")) { _,index -> if (!loading) exportDrawing(index == 1) }.show()
                     4 -> workspaceId?.let { startActivity(Intent(this,AgentWorkspaceActivity::class.java).putExtra("workspace",it)) }
-                    5 -> AlertDialog.Builder(this).setTitle("操作说明").setMessage("一个工作区保存手写、绘画、PDF 和 AI 生成页。\n手写笔／绘画笔只切换笔刷预设，当前页面和笔迹保留。\n双指拖动与缩放；菜单中可居中显示。工具栏可横向滑动。\n页面入口可新建、导入和切换；笔迹自动保存。\n框选后发送会使用选区；再次点击框选取消。\nAI 按钮展开范围、指令与自动识别；默认手动发送。\n新生成页通过底部入口打开，保留当前笔迹。")
+                    5 -> startActivity(Intent(this,com.opc.baize.MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openSettings",true))
+                    6 -> AlertDialog.Builder(this).setTitle("操作说明").setMessage("一个工作区保存手写、绘画、PDF 和 AI 生成页。\n手写笔／绘画笔只切换笔刷预设，当前页面和笔迹保留。\n双指拖动与缩放；菜单中可居中显示。工具栏可横向滑动。\n页面入口可新建、导入和切换；笔迹自动保存。\n框选后发送会使用选区；再次点击框选取消。\nAI 按钮展开范围、指令与自动识别；默认手动发送。\n新生成页通过底部入口打开，保留当前笔迹。")
                         .setPositiveButton("关闭",null).show()
                 }
             }.show()
@@ -596,6 +642,7 @@ class PaperActivity : Activity() {
     }
     private fun message(text: String) = runOnUiThread { if (!destroyed) status.text = text }
     override fun onDestroy() {
+        CanvasSession.detach(this)
         destroyed = true
         WorkspacePageEvents.unsubscribe(readyListener)
         scope.cancel(); studyRuntime?.close()

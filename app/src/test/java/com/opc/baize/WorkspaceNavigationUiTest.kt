@@ -44,6 +44,29 @@ class WorkspaceNavigationUiTest {
             assertTrue(home.contains("工作区")); assertTrue(home.contains("画布")); assertTrue(home.contains("对话")); assertFalse(home.contains("绘画"))
         } finally { controller.destroy() }
     }
+    @Test fun modelSettingsKeepsTheEstablishedSubscriptionEntryAndSavedChoice() {
+        val context=RuntimeEnvironment.getApplication()
+        val prefs=context.getSharedPreferences("moling",0)
+        prefs.edit().putBoolean("firstRunDone",true).putString("model_provider","subscription")
+            .putString("subscription_model","saved-text").putString("subscription_image_model","saved-image").commit()
+        val controller=Robolectric.buildActivity(MainActivity::class.java).create()
+        try {
+            val activity=controller.get()
+            val pane=MainActivity::class.java.getDeclaredMethod("buildSettingsPane").apply {isAccessible=true}.invoke(activity) as View
+            val labels=text(pane)
+            assertTrue(labels.indexOf("模型通道")<labels.indexOf("字体"))
+            fun find(view:View):android.widget.Button? {
+                if(view is android.widget.Button && view.text=="ChatGPT 登录与模型选择") return view
+                if(view is ViewGroup) for(i in 0 until view.childCount) find(view.getChildAt(i))?.let {return it}
+                return null
+            }
+            requireNotNull(find(pane)).performClick()
+            assertEquals(com.opc.baize.subscription.SubscriptionSettingsActivity::class.java.name,shadowOf(activity).nextStartedActivity.component!!.className)
+            assertEquals("subscription",prefs.getString("model_provider",null))
+            assertEquals("saved-text",prefs.getString("subscription_model",null))
+            assertEquals("saved-image",prefs.getString("subscription_image_model",null))
+        } finally {controller.destroy()}
+    }
     @Test fun selectingAndContinuingAnOldTaskAppendsToItsOriginalArchive() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("moling", 0).edit().putBoolean("firstRunDone", true).commit()

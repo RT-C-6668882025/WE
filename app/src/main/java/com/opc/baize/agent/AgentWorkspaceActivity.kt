@@ -50,6 +50,10 @@ class AgentWorkspaceActivity : Activity() {
             AlertDialog.Builder(this).setTitle("工作区设置").setView(ScrollView(this).apply { addView(settings) })
                 .setPositiveButton("关闭",null).show()
         }
+        button(settings, "AI 模型设置") {
+            startActivity(Intent(this,com.opc.baize.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openSettings",true))
+        }
         button(settings, "导入 Skill 文件夹") {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), IMPORT_SKILL)
         }

@@ -18,7 +18,7 @@ object WorkspaceDrawing {
         return listOf("json", "md", "txt").map { File(file.parentFile,"${file.nameWithoutExtension}.$it") }
             .firstOrNull { it.isFile && it.canonicalPath.startsWith(workspace.root.canonicalPath + "/memory/pages/") }?.let { "/" + it.relativeTo(workspace.root).path }
     }
-    @Synchronized fun open(workspace: WeWorkspace,newDrawing: Boolean=false): Document {
+    @Synchronized fun open(workspace: WeWorkspace,newDrawing: Boolean=false,title: String="空白页"): Document {
         val directory=File(workspace.root,"memory/pages/drawings").apply {mkdirs()}
         val pointer=AtomicFile(File(workspace.container,"active-drawing.json"))
         if(!newDrawing) {
@@ -42,7 +42,7 @@ object WorkspaceDrawing {
             }
         }
         val id=UUID.randomUUID().toString();val source=File(directory,"$id.json");val pdf=File(directory,"$id.pdf")
-        val content=blankContent()
+        val content=blankContent().put("title",title)
         try {
             LearningTurn.write(source,content.toString());LearningPageRenderer.render(source,pdf,true)
             // A valid trailing PDF comment gives each independent drawing a distinct content identity.

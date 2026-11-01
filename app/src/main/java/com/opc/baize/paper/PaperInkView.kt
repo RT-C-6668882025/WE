@@ -61,12 +61,27 @@ class PaperInkView(context: Context) : View(context) {
     fun release() { cancelInteraction(); layerRenderer.close(); image?.recycle(); image = null }
     fun resetView() { zoom = 1f; dx = 0f; dy = 0f; invalidate() }
     fun zoom(factor: Float) { zoom = (zoom * factor).coerceIn(1f, 5f); invalidate() }
+    var historyRequest: ((Boolean)->Unit)? = null
+    val canAcceptExternal: Boolean get() = activePointer == -1 && current.isEmpty() && eraseBefore == null && !selecting
+    fun acceptExternal(data: PaperPage) {
+        require(canAcceptExternal); cancelInteraction(); page=data; history.clear(); future.clear(); invalidate()
+    }
+    fun context(): org.json.JSONObject {
+        val t=transform()
+        return org.json.JSONObject().put("revision",page.revision).put("width",page.width).put("height",page.height)
+            .put("tool",mode.name.lowercase()).put("brush_engine",brushEngine).put("brush",brushSettings.encode())
+            .put("pen_width",penWidth).put("pen_color",String.format("#%08X",penColor))
+            .put("selection",region?.let {org.json.JSONObject().put("left",it.left).put("top",it.top).put("right",it.right).put("bottom",it.bottom)} ?: org.json.JSONObject.NULL)
+            .put("viewport",org.json.JSONObject().put("scale",t.scale).put("left",t.left).put("top",t.top).put("view_width",width).put("view_height",height))
+            .put("input_in_progress",!canAcceptExternal)
+    }
     fun undo() {
+        historyRequest?.let {it(false);return}
         cancelInteraction()
         val previous = if(history.isNotEmpty()) history.removeLast() else return
         future.addLast(page); publish(previous)
     }
-    fun redo() { cancelInteraction(); if(future.isNotEmpty()) { history.addLast(page); publish(future.removeLast()) } }
+    fun redo() { historyRequest?.let {it(true);return}; cancelInteraction(); if(future.isNotEmpty()) { history.addLast(page); publish(future.removeLast()) } }
     private fun publish(data: PaperPage) {
         page=data.copy(revision=page.revision+1); changed?.invoke(page); invalidate()
     }

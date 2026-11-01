@@ -209,8 +209,13 @@ class MainActivity : Activity() {
             else book.resetBook(Texts.INTRO_TEXT)
             // 首次启动：弹欢迎 → 一键打开设置面板【设置】区，引导填大模型 API
             if (!prefs.getBoolean("firstRunDone", false)) showFirstRunGuide()
-            else if (savedInstanceState == null) showPanel(TAB_WORKSPACES)
+            else if (savedInstanceState == null) showPanel(if(intent.getBooleanExtra("openSettings",false)) TAB_SETTINGS else TAB_WORKSPACES)
         }
+    }
+
+    override fun onNewIntent(next: android.content.Intent) {
+        super.onNewIntent(next); intent=next
+        if(next.getBooleanExtra("openSettings",false)) showPanel(TAB_SETTINGS)
     }
 
     /** 首次打开引导：填过 API（或点“稍后”）即置 firstRunDone，之后不再弹。 */
@@ -1164,6 +1169,7 @@ class MainActivity : Activity() {
         }
         fun gap(dp: Float) = col.addView(View(this), LinearLayout.LayoutParams(1, pxOf(dp)))
 
+        val appearanceStart=col.childCount
         // (a) 字体设置 —— 字号滑杆
         col.addView(sectionTitle("字体"))
         gap(8f)
@@ -1244,6 +1250,8 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
+        val appearanceViews=(appearanceStart until col.childCount).map {col.getChildAt(it)}
+        appearanceViews.forEach {col.removeView(it)}
         col.addView(sectionTitle("模型通道"))
         val providerChoices = android.widget.Spinner(this).apply {
             adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
@@ -1316,6 +1324,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
+        appearanceViews.forEach {col.addView(it)}
         // (c) 手写识别降级通道（可选）：无 Google 服务的设备（华为等）本机识别不可用，
         //     可自建 server.py 识别服务并在此填地址；留空 = 只用本机 ML Kit。
         col.addView(sectionTitle("手写识别（可选）"))
