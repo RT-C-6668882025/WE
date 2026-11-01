@@ -11,6 +11,13 @@ object WorkspaceDrawing {
     data class Document(val pdf: File,val sourcePath: String)
     internal fun blankContent(): JSONObject = JSONObject().put("we_page",1).put("mode","drawing").put("title","绘画")
         .put("blocks",JSONArray().put(JSONObject().put("id","canvas").put("type","drawing").put("height",500).put("grid","blank")))
+    /** Resolve the actual editable source, including nested drawing pages and imported PDFs. */
+    fun sourcePath(workspace: WeWorkspace, pdf: File): String? {
+        val file = pdf.canonicalFile
+        if (!file.path.startsWith(workspace.root.canonicalPath + "/memory/pages/")) return null
+        return listOf("json", "md", "txt").map { File(file.parentFile,"${file.nameWithoutExtension}.$it") }
+            .firstOrNull { it.isFile && it.canonicalPath.startsWith(workspace.root.canonicalPath + "/memory/pages/") }?.let { "/" + it.relativeTo(workspace.root).path }
+    }
     @Synchronized fun open(workspace: WeWorkspace,newDrawing: Boolean=false): Document {
         val directory=File(workspace.root,"memory/pages/drawings").apply {mkdirs()}
         val pointer=AtomicFile(File(workspace.container,"active-drawing.json"))

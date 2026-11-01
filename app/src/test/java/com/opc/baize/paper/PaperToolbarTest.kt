@@ -20,8 +20,14 @@ class PaperToolbarTest {
             .create().start().resume().visible()
         try {
             val all = views(controller.get().window.decorView)
-            val visible = all.filter { it.visibility == View.VISIBLE }.filterIsInstance<TextView>().map { it.text.toString() }
-            assertTrue(visible.contains("发送")); assertTrue(visible.contains("笔刷")); assertTrue(visible.contains("菜单")); assertTrue(visible.contains("指令：识别"))
+            val visible = all.filter { it.isShown }.filterIsInstance<TextView>().map { it.text.toString() }
+            assertTrue(visible.contains("发送")); assertTrue(visible.contains("笔刷")); assertTrue(visible.contains("菜单")); assertTrue(visible.contains("页面"))
+            assertFalse(visible.contains("指令：识别"))
+            val options = all.filterIsInstance<Button>().single { it.text == "AI ▾" }
+            options.performClick()
+            assertTrue(all.filterIsInstance<Switch>().single { it.text == "自动识别" }.isShown)
+            options.performClick()
+            assertFalse(all.filterIsInstance<Switch>().single { it.text == "自动识别" }.isShown)
             for (removed in listOf("缩小","放大","导入 PDF","局部批改","选区解释","批改记录","查看生成页","停止","上一页","下一页")) assertFalse(removed,visible.contains(removed))
             assertFalse(all.filterIsInstance<Switch>().single { it.text == "自动识别" }.isChecked)
             val scope = all.filterIsInstance<Spinner>().single()
@@ -29,6 +35,20 @@ class PaperToolbarTest {
             val selection = all.filterIsInstance<Button>().single { it.text.toString().endsWith("框选") }
             selection.performClick(); assertEquals("选区",scope.selectedItem)
             selection.performClick(); assertEquals("整页",scope.selectedItem)
+        } finally { controller.pause().stop().destroy() }
+    }
+    @Test fun switchingBrushPresetKeepsTheSameCanvasAndPage() {
+        val controller = Robolectric.buildActivity(PaperActivity::class.java).create().start().resume().visible()
+        try {
+            val activity = controller.get()
+            val canvas = views(activity.window.decorView).filterIsInstance<PaperInkView>().single()
+            val page = canvas.page
+            val preset = PaperActivity::class.java.getDeclaredMethod("setInputMode", Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+            preset.invoke(activity,true)
+            assertSame(canvas,views(activity.window.decorView).filterIsInstance<PaperInkView>().single())
+            assertSame(page,canvas.page)
+            preset.invoke(activity,false)
+            assertSame(page,canvas.page)
         } finally { controller.pause().stop().destroy() }
     }
     @Test fun promptsAndSystemAreEditableAndSurviveRecreation() {
