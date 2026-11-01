@@ -24,7 +24,7 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-enabled MCP automation endpoint receiving paired Agent commands and executing workspace actions on this device" />
         </service>
-        <activity android:name=".mcp.McpSettingsActivity" android:exported="false" />
+        <activity android:name=".mcp.McpSettingsActivity" android:exported="false" android:launchMode="singleTop" />
         <activity android:name=".paper.PaperActivity" android:exported="false" />
         <activity android:name=".agent.AgentWorkspaceActivity" android:exported="false" />
         <activity android:name=".subscription.SubscriptionSettingsActivity" android:exported="false" />

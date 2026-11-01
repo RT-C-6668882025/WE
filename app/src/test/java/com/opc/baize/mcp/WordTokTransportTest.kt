@@ -8,19 +8,11 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class WordTokTransportTest {
-    @Test fun pairingUsesHealthThenAnEmptyPostAndDeviceRequestsUseBearer() {
+    @Test fun devicePollingAndReceiptsUseWordTokBearerTransport() {
         MockWebServer().use { server ->
             server.start()
             val transport=WordTokTransport()
             try {
-                server.enqueue(MockResponse().setBody("{}"))
-                transport.request(server.url("/health").toString(),setup=true)
-                assertEquals("GET",server.takeRequest(1,TimeUnit.SECONDS)!!.method)
-                server.enqueue(MockResponse().setBody("{}"))
-                transport.request(server.url("/pair").toString(),setup=true,pair=true)
-                val pair=server.takeRequest(1,TimeUnit.SECONDS)!!
-                assertEquals("POST",pair.method);assertEquals(0L,pair.bodySize)
-                assertNull(pair.getHeader("Authorization"))
                 server.enqueue(MockResponse().setBody("[]"))
                 transport.request(server.url("/device/poll").toString(),"test-device-secret")
                 val poll=server.takeRequest(1,TimeUnit.SECONDS)!!

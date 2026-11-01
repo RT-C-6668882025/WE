@@ -35,9 +35,9 @@ Orchestration, files and ink live on Android. Model inference uses your selected
 
 The embedded Android Agent Runtime provides file tools, Skill reading and a public HTTPS MCP client. This is **not an external MCP server**.
 
-External MCP is available under Settings → Agent connection · MCP. A same-device native client can connect to the Android loopback endpoint; tools read workspace files and handwritten page images, write files/Skills and publish a new learning page. Writes use durable operation receipts and version checks.
+External MCP is available under Settings → Agent connection · MCP. The connection page follows WordTok; tools read workspace files and handwritten page images, write files/Skills and publish a new learning page. Writes use durable operation receipts and version checks.
 
-WordTok-style fixed public URLs use a separately deployed HTTPS relay while Android executes tools. The default WE relay is https://we.wordrelay.dpdns.org. Use Copy MCP address to pair and connect automatically; do not reuse WordTok URLs or data. See [MCP setup](mcp/README.md). A cloud client cannot reach Android loopback directly.
+WordTok-style fixed public URLs use a separately deployed HTTPS relay while Android executes tools. The default WE relay is https://we.wordrelay.dpdns.org. Pair once, then copy the fixed connection URL; subsequent app launches reconnect automatically; do not reuse WordTok URLs or data. See [MCP setup](mcp/README.md). A cloud client cannot reach Android loopback directly.
 
  Current generated papers are primarily text. Editable graphical scenes, arbitrary Python/Node Skill scripts, MCP OAuth, stdio and Google Drive sync are not supported. DSH Go, RikkaHub, Excalidraw and Jetpack Ink were investigated but have not been integrated.
 
@@ -88,4 +88,4 @@ Handwriting and drawing share one workspace canvas. Manual send is the default; 
 
 The first xnotes extraction reuses MIT-licensed affine geometry for selection transforms. See [integration audit](docs/research/editor-integration.md). Jetpack Ink live-authoring adaptation is still under evaluation.
 
-MCP quick connection: Settings → Agent connection · MCP → Copy MCP address. The app pairs with the default WE relay, reuses the encrypted identity, starts the device service and copies one URL. Local configuration and unpairing are under Advanced settings.
+MCP connection: Settings → Agent connection · MCP → Pair connection → Copy connection address. Pairing and revocation use the same WebView fetch flow as WordTok; native background polling keeps its retry and lifecycle behavior. Existing encrypted identities are preserved. Reconnect, unpair and background permission controls are on the connection card. The previous connection switch and local configuration entry have been removed.

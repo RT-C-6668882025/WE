@@ -11,18 +11,16 @@ internal class WordTokTransport : java.io.Closeable {
     @Volatile private var active: HttpURLConnection? = null
     @Volatile private var closed = false
 
-    fun request(url: String, token: String? = null, body: JSONObject? = null,
-                setup: Boolean = false, pair: Boolean = false): Response {
+    fun request(url: String, token: String? = null, body: JSONObject? = null): Response {
         check(!closed)
         val connection = URL(url).openConnection() as HttpURLConnection
         active = connection
         try {
             check(!closed)
-            connection.connectTimeout = if (setup) 15000 else 5000
-            connection.readTimeout = if (setup) 15000 else 10000
+            connection.connectTimeout = 5000
+            connection.readTimeout = 10000
             connection.instanceFollowRedirects = false
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-            if (pair) connection.requestMethod = "POST"
             if (body != null) {
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/json")

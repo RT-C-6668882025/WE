@@ -6,15 +6,13 @@ Android 执行工作区工具。公网中继仅转发 JSON 指令和结果，不
 
 ## 在 Android 使用
 
-设置 → **Agent 连接 · MCP → 复制 MCP 地址**。
+设置 → **Agent 连接 · MCP → 配对连接**。首次配对后点击 **复制连接地址**，将固定地址交给 Muse 或其他支持远程 MCP 的 Agent。
 
-App 已预设 `https://we.wordrelay.dpdns.org`。第一次点击时自动检查中继、配对、加密保存身份、开启后台连接并复制完整公网 MCP 地址；把该地址粘贴给 Muse 或其他支持远程 MCP 的 Agent。重复点击及 App 重开沿用已有身份与地址，不重复配对。已有自定义中继配对保留。
+连接页面、WebView fetch 配对与撤销、原生后台轮询均以 WordTok 为基准。App 已预设 `https://we.wordrelay.dpdns.org`，不用输入服务器或配置鉴权头。页面提供固定地址、重新连接、解除配对及锁屏后台权限入口。
 
-“保持连接”可停止/重新开启服务；开启状态下重新打开 App 会恢复连接，系统重建服务时也会重试。不在开机时启动；系统强制停止、网络或厂商后台限制仍会影响可用性。
+配对一次，以后打开应用自动连接；切后台与锁屏继续，划掉任务或退出应用停止服务，配对身份保留。已有 WE 加密身份通过宿主适配器沿用，不重复配对。不在开机时启动。网络和厂商后台限制仍可能影响连接。
 
-“高级设置”提供本机配置与解除配对。解除配对须先让中继撤销原地址；离线或失败时保留原配对以便重试。地址包含访问密钥，仅复制给受信任的 Agent，App 不在页面或日志中展示密钥。
-
-本机配置只供同一 Android 上支持 Authorization 请求头的客户端使用，地址为 `http://127.0.0.1:49327/mcp`。电脑和云端 Agent 使用“复制 MCP 地址”得到的公网地址。
+解除配对先由 WebView fetch 请求中继撤销原地址，成功或确认 401 后才清除本机凭据；其他失败保留原身份。页面按 WordTok 展示固定能力地址，含访问密钥，只交给受信任的 Agent，不在日志中打印。旧的保持连接开关、高级设置和本机配置入口已移除。
 
 ## 工具
 
@@ -40,7 +38,7 @@ docker run -d --name we-mcp-relay --restart unless-stopped \
   -p 127.0.0.1:8787:8080 -v we-mcp-data:/data we-mcp-relay
 ```
 
-用 Caddy/Nginx 将独立域名的 HTTPS 转发到 `127.0.0.1:8787`，示例见 Caddyfile.example。不要记录 MCP 路径或 Authorization 头。`GET /health` 应返回 name=write-everything、protocol=2、persistent=true。默认拒绝所有浏览器 Origin；只给原生 MCP 客户端使用。确有浏览器客户端时，可通过 `ALLOWED_ORIGINS` 精确列出受信任 Origin，不要使用通配符。
+用 Caddy/Nginx 将独立域名的 HTTPS 转发到 `127.0.0.1:8787`，示例见 Caddyfile.example。不要记录 MCP 路径或 Authorization 头。`GET /health` 应返回 name=write-everything、protocol=2、persistent=true。与 WordTok 一样，首次配对由 Android WebView 的 `fetch` 完成；默认精确允许应用来源 `https://localhost`。其他浏览器来源默认拒绝，可通过 `ALLOWED_ORIGINS` 精确列出受信任 Origin，不要使用通配符。旧部署若显式传入空 origins，需要升级 WE 启动文件以允许该来源。
 
 单实例 JSON 存储；不要让多实例同时写同一个数据文件。文件自动设为 600，目录 700。部署前备份数据；丢失数据会丢失配对。配对最多 1000 个，每配对最多 10000 条未清理回执、20 个在途请求，单请求 1 MiB。`DATA_FILE` 指向专用目录，不能入库；不要复用 WordTok 的数据文件。公开配对端点应由反向代理限制频率，适合自用单实例。
 
@@ -48,7 +46,7 @@ Streamable HTTP 协商支持 2025-03-26、2025-06-18、2025-11-25；单 JSON 响
 
 ## 验证
 
-`node --test mcp/relay.test.mjs` 验证配对、队列、真实 HTTP、回执、重试冲突、重启恢复及撤销。`WorkspaceMcpTest` 验证 Android 工具与本机 HTTP；`McpDeviceTest` 在 Android 模拟器使用真实 PdfRenderer 检查图像、笔迹保留及两轮新页。JVM PDF 使用测试写入器，不能替代设备测试。公网真实域名与手机后台连接需部署后实测。
+`node --test mcp/relay.test.mjs tools/check-wordtok-connection.test.mjs` 验证配对、队列、真实 HTTP、回执、重试冲突、重启恢复及撤销。`WorkspaceMcpTest` 验证 Android 工具与本机 HTTP；`McpDeviceTest` 在 Android 模拟器使用真实 PdfRenderer 检查图像、笔迹保留及两轮新页。JVM PDF 使用测试写入器，不能替代设备测试。`McpWebViewDeviceTest` 通过真实 WebView HTTPS fixture 验证 CORS、配对、保存及撤销；`McpPublicRelayDeviceTest` 从生产页面验证公网配对、MCP initialize 和原生设备轮询。公网测试通过才允许自动发布。
 
 协议参考：https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
 

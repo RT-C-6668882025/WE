@@ -238,9 +238,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if(getSharedPreferences("we-mcp",MODE_PRIVATE).getBoolean("enabled",false)) {
-            runCatching {startForegroundService(android.content.Intent(this,com.opc.baize.mcp.McpService::class.java))}
-        }
+        runCatching {com.opc.baize.mcp.McpService.resume(this)}
         providerSelector?.setSelection(if (prefs.getString("model_provider", "anthropic") == "subscription") 1 else 0)
         // 回前台：HWEditView 重新进手写态，恢复驱动直写（onPause 时已退出）。
         hwLayer?.enterHandwriteState()
@@ -266,6 +264,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if(isFinishing) stopService(android.content.Intent(this,com.opc.baize.mcp.McpService::class.java))
         super.onDestroy()
         refresh.forceRestoreQuality()
         hwLayer?.leaveHandwriteState()

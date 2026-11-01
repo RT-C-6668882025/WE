@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>WE · 连接 AI</title><link rel="stylesheet" href="style.css"></head>
+<body><section class="aiCard" aria-labelledby="ai-title" aria-busy="false">
+<div class="aiCardHeader"><div><span class="aiEyebrow">CONNECT</span><h2 id="ai-title">连接 AI</h2></div><span id="status" class="aiStatus"><i aria-hidden="true"></i><span>未配对</span></span></div>
+<p class="aiDescription">连接支持 MCP 的 Agent，管理工作区、整理资料、读取文件、生成学习页与查看笔迹。</p>
+<div id="endpoint" class="aiEndpoint" hidden><label for="ai-address">MCP 连接地址</label><textarea id="ai-address" readonly rows="3" spellcheck="false"></textarea></div>
+<div class="aiActions"><button id="pair" class="primary" disabled>配对连接</button><button id="copy" class="primary" hidden>复制连接地址</button><button id="reconnect" hidden>重新连接</button><button id="unpair" class="aiDisconnect" hidden>解除配对</button></div>
+<p id="hint" class="aiHint">配对一次，将固定地址添加到支持 MCP 的 Agent。以后打开应用自动连接。</p>
+<button id="background" hidden>允许锁屏后保持连接</button>
+<p id="notice" class="aiNotice" role="status" aria-live="polite"></p></section><script type="module" src="page.js"></script></body></html>

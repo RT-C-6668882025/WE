@@ -67,25 +67,29 @@ class McpDeviceTest {
         } finally { folder.deleteRecursively() }
     }
     @Test fun nativeHttpWorkspaceInkAndContinuedPages() = McpContract.verify(InstrumentationRegistry.getInstrumentation().targetContext, true)
-    @Test fun foregroundEndpointStartsAndStops() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        context.startForegroundService(android.content.Intent(context, McpService::class.java))
+    @Test fun foregroundSessionStartsWithSavedPairAndStopsWithoutDeletingIt() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val store=McpPairing(context)
+        org.junit.Assume.assumeTrue(store.read()==null)
+        val server=okhttp3.mockwebserver.MockWebServer()
+        server.start()
+        server.enqueue(okhttp3.mockwebserver.MockResponse().setResponseCode(401))
         try {
-            val deadline = android.os.SystemClock.elapsedRealtime() + 10000
-            while (!McpService.running && android.os.SystemClock.elapsedRealtime() < deadline) android.os.SystemClock.sleep(25)
-            org.junit.Assert.assertTrue(McpService.status, McpService.running)
-            val client = okhttp3.OkHttpClient()
-            try {
-                client.newCall(okhttp3.Request.Builder().url("http://127.0.0.1:49327/health")
-                    .header("Authorization", "Bearer " + McpService.localToken).build()).execute().use { org.junit.Assert.assertEquals(200, it.code) }
-            } finally { client.connectionPool.evictAll(); client.dispatcher.executorService.shutdown() }
+            // Production requires HTTPS; an unreachable dedicated HTTPS endpoint is enough to verify lifecycle.
+            store.save(org.json.JSONObject().put("base","https://127.0.0.1:"+server.port)
+                .put("agentToken","a".repeat(64)).put("deviceToken","b".repeat(64)))
+            context.startForegroundService(android.content.Intent(context,McpService::class.java))
+            val deadline=android.os.SystemClock.elapsedRealtime()+10000
+            while(!McpService.running && android.os.SystemClock.elapsedRealtime()<deadline)android.os.SystemClock.sleep(25)
+            org.junit.Assert.assertTrue("Foreground connection did not start",McpService.running)
         } finally {
-            context.stopService(android.content.Intent(context, McpService::class.java))
-            val deadline = android.os.SystemClock.elapsedRealtime() + 5000
-            while (McpService.running && android.os.SystemClock.elapsedRealtime() < deadline) android.os.SystemClock.sleep(25)
+            context.stopService(android.content.Intent(context,McpService::class.java))
+            val deadline=android.os.SystemClock.elapsedRealtime()+5000
+            while(McpService.running && android.os.SystemClock.elapsedRealtime()<deadline)android.os.SystemClock.sleep(25)
+            org.junit.Assert.assertFalse(McpService.running)
+            org.junit.Assert.assertNotNull("Stopping must preserve the fixed address",store.read())
+            store.clear();server.shutdown()
         }
-        org.junit.Assert.assertFalse(McpService.running)
-        org.junit.Assert.assertEquals("", McpService.localToken)
     }
     @Test fun pairingIsEncryptedAndSurvivesRecreation() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

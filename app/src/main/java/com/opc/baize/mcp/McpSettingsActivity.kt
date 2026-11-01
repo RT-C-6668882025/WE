@@ -1,150 +1,103 @@
 package com.opc.baize.mcp
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.*
-import android.os.Bundle
-import android.widget.*
+import android.os.*
+import android.webkit.*
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
-/** The normal flow is one tap: pair if needed, persist identity, start connection, copy one URL. */
-open class McpSettingsActivity : Activity() {
+/** WordTok's WebView fetch pairing + native background service, with no native pairing fallback. */
+class McpSettingsActivity : Activity() {
+    private val main=Handler(Looper.getMainLooper())
     private val worker=Executors.newSingleThreadExecutor()
-    private val handler=android.os.Handler(android.os.Looper.getMainLooper())
-    private lateinit var state:TextView
-    private lateinit var copyButton:Button
-    private lateinit var connectionSwitch:Switch
-    private var alive=true
-    private var busy=false
-    private var failure:String?=null
-    private var updatingSwitch=false
-    private val prefs by lazy {getSharedPreferences("we-mcp",MODE_PRIVATE)}
-    private val monitor=object:Runnable {override fun run() {if(alive) {renderState();handler.postDelayed(this,1000)}}}
-    protected open fun preparePairing():JSONObject {
-        val store=McpPairing(this)
-        return PublicMcpConnection(store::read,store::save,clear=store::clear).ensure()
-    }
-    protected open fun connectionTask(task:()->Unit) {worker.execute(task)}
-    protected open fun startConnection() {
-        if(android.os.Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),44)
-        startForegroundService(Intent(this,McpService::class.java))
-    }
+    private lateinit var page:WebView
+    @Volatile private var alive=true
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
-        val root=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(24,24,24,24)}
-        setContentView(ScrollView(this).apply {addView(root)})
-        fun label(text:String)=TextView(this).apply {this.text=text;textSize=16f;setPadding(0,12,0,12);root.addView(this)}
-        label("Agent 连接 · MCP")
-        label("复制一个地址，粘贴给 Muse 或其他 Agent，即可连接这个设备的工作区。首次使用会自动准备连接，以后沿用同一个地址。")
-        state=label("点击下方按钮，复制并开启连接")
-        copyButton=Button(this).apply {text="复制 MCP 地址";setOnClickListener {connect(true)}};root.addView(copyButton)
-        connectionSwitch=Switch(this).apply {
-            text="保持连接";isChecked=prefs.getBoolean("enabled",false)
-            setOnCheckedChangeListener {_,checked -> if(!updatingSwitch) {
-                if(checked) connect(false) else stopConnection()
-            }}
-        };root.addView(connectionSwitch)
-        root.addView(Button(this).apply {text="重新连接";setOnClickListener {
-            if(!busy) {stopConnection();connect(false)}
-        }})
-        root.addView(Button(this).apply {text="允许锁屏后保持连接";setOnClickListener {
-            try {
-                val power=getSystemService(android.os.PowerManager::class.java)
-                if(power.isIgnoringBatteryOptimizations(packageName))
-                    Toast.makeText(this@McpSettingsActivity,"已允许后台运行",Toast.LENGTH_SHORT).show()
-                else startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    android.net.Uri.parse("package:$packageName")))
-            } catch(_:Exception) {Toast.makeText(this@McpSettingsActivity,"请在系统电池设置中允许 WE 后台运行",Toast.LENGTH_LONG).show()}
-        }})
-        root.addView(Button(this).apply {text="高级设置";setOnClickListener {if(!busy) advanced()}})
-        label("地址包含访问密钥，只交给你信任的 Agent。连接期间通知栏会显示状态；网络或系统后台限制可能导致断开。")
-        if(prefs.getBoolean("enabled",false)) connect(false)
+        page=McpWebPage.create(this,Bridge())
+        setContentView(page)
     }
-    private fun connect(copyWhenReady:Boolean) {
-        if(busy) return
-        busy=true;failure=null;copyButton.isEnabled=false;renderState()
-        connectionTask {
-            try {
-                val pairing=preparePairing()
-                val address=PublicMcpConnection.address(pairing)
-                runOnUiThread {if(alive) {
-                    try {
-                        startConnection();prefs.edit().putBoolean("enabled",true).apply();setSwitch(true)
-                        if(copyWhenReady) copy(address)
-                    } catch(_:Exception) {failure="连接未启动，请重试；已保存的地址保留。"}
-                    busy=false;copyButton.isEnabled=true;renderState()
-                }}
-            } catch(e:Exception) {
-                val message=McpSetupFailure.describe(e)
-                runOnUiThread {if(alive) {
-                    busy=false;copyButton.isEnabled=true;failure=message;renderState()
-                }}
+    inner class Bridge {
+        @JavascriptInterface fun request(id:String,method:String,payload:String) {
+            if(!id.matches(Regex("[0-9]{1,10}")) || !alive) return
+            worker.execute {
+                try {
+                    val store=McpPairing(this@McpSettingsActivity)
+                    when(method) {
+                        "load" -> complete(id,store.read()?.let {McpConnectionConfig.toWordTok(it)})
+                        "save" -> {store.save(McpConnectionConfig.fromWordTok(JSONObject(payload)));complete(id,true)}
+                        "clear" -> {store.clear();complete(id,true)}
+                        "defaultRelay" -> complete(id,McpConnectionConfig.DEFAULT_RELAY)
+                        "state" -> complete(id,JSONObject().put("state",McpService.connectionState).put("message",McpService.status))
+                        "backgroundStatus" -> complete(id,getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName))
+                        "start" -> onMain(id) {
+                            requireNotNull(store.read())
+                            if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)
+                                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),44)
+                            startForegroundService(Intent(this@McpSettingsActivity,McpService::class.java));true
+                        }
+                        "stop" -> onMain(id) {stopService(Intent(this@McpSettingsActivity,McpService::class.java));true}
+                        "allowBackground" -> onMain(id) {
+                            startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                android.net.Uri.parse("package:$packageName")));true
+                        }
+                        else -> complete(id,null,"未知连接操作")
+                    }
+                } catch(_:Exception) {complete(id,null,"连接设置未完成，请重试")}
             }
         }
     }
-    private fun setSwitch(value:Boolean) {updatingSwitch=true;connectionSwitch.isChecked=value;updatingSwitch=false}
-    private fun stopConnection() {
-        prefs.edit().putBoolean("enabled",false).apply()
-        stopService(Intent(this,McpService::class.java));setSwitch(false)
-        failure=null;renderState()
+    private fun onMain(id:String,action:()->Any) {main.post {if(alive) {
+        try {complete(id,action())} catch(_:Exception) {complete(id,null,"连接操作未完成，请重试")}
+    }}}
+    private fun complete(id:String,value:Any?,error:String?=null) {
+        val response=JSONObject().put("id",id).put("value",value?:JSONObject.NULL).put("error",error?:JSONObject.NULL)
+        main.post {if(alive) page.evaluateJavascript("window.weNativeReply($response)",null)}
     }
-    private fun renderState() {
-        state.text=when {
-            busy -> "正在准备连接…"
-            failure!=null -> failure
-            !prefs.getBoolean("enabled",false) -> "已停止 · 再次复制地址即可连接"
-            McpService.status=="已停止" -> "正在连接…"
-            else -> McpService.status
+    override fun onResume() {
+        super.onResume();page.onResume()
+        runCatching {McpService.resume(this)}
+    }
+    override fun onPause() {page.onPause();super.onPause()}
+    override fun onDestroy() {
+        alive=false;main.removeCallbacksAndMessages(null)
+        page.removeJavascriptInterface("WeNative");page.stopLoading();page.destroy();worker.shutdown()
+        super.onDestroy()
+    }
+}
+
+/** A secure localhost origin, matching Capacitor's androidScheme=https default in WordTok. */
+internal object McpWebPage {
+    const val URL="https://localhost/mcp/index.html"
+    @android.annotation.SuppressLint("SetJavaScriptEnabled")
+    fun create(context:android.content.Context,bridge:Any,client:McpWebPageClient=McpWebPageClient(context)):WebView = WebView(context).apply {
+        settings.javaScriptEnabled=true
+        settings.domStorageEnabled=true
+        settings.allowFileAccess=false;settings.allowContentAccess=false
+        settings.mixedContentMode=WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        addJavascriptInterface(bridge,"WeNative")
+        webViewClient=client
+        webChromeClient=object:WebChromeClient() {
+            override fun onJsConfirm(view:WebView,url:String,message:String,result:JsResult):Boolean {
+                val activity=context as? Activity ?: return false
+                android.app.AlertDialog.Builder(activity).setMessage(message).setNegativeButton("取消") {_,_->result.cancel()}
+                    .setPositiveButton("确定") {_,_->result.confirm()}.setOnCancelListener {result.cancel()}.show()
+                return true
+            }
+            override fun onConsoleMessage(message:ConsoleMessage):Boolean = true
         }
-        copyButton.text=if(failure!=null) "重试并复制 MCP 地址" else "复制 MCP 地址"
+        loadUrl(URL)
     }
-    private fun advanced() {
-        AlertDialog.Builder(this).setTitle("高级设置")
-            .setItems(arrayOf("复制本机 MCP 配置","解除配对")) {_,which ->
-                if(which==0) {
-                    if(!McpService.running) {Toast.makeText(this,"请先开启连接",Toast.LENGTH_SHORT).show();return@setItems}
-                    val config=JSONObject().put("mcpServers",JSONObject().put("we",JSONObject()
-                        .put("url","http://127.0.0.1:49327/mcp")
-                        .put("headers",JSONObject().put("Authorization","Bearer "+McpService.localToken))))
-                    copy(config.toString(2))
-                } else confirmRevoke()
-            }.setNegativeButton("关闭",null).show()
+}
+internal open class McpWebPageClient(private val context:android.content.Context):WebViewClient() {
+    override fun shouldOverrideUrlLoading(view:WebView,request:WebResourceRequest):Boolean = true
+    override fun shouldInterceptRequest(view:WebView,request:WebResourceRequest):WebResourceResponse? {
+        val uri=request.url
+        if(uri.scheme!="https" || uri.host!="localhost" || uri.port !in setOf(-1,443)) return null
+        val name=uri.path?.removePrefix("/mcp/") ?: return denied()
+        val mime=when(name) {"index.html"->"text/html";"connection.js","page.js"->"application/javascript";"style.css"->"text/css";else->return denied()}
+        return WebResourceResponse(mime,"UTF-8",context.assets.open("mcp/$name"))
     }
-    private fun confirmRevoke() {
-        AlertDialog.Builder(this).setTitle("解除配对？").setMessage("原 MCP 地址将失效，工作区资料保留。")
-            .setNegativeButton("取消",null).setPositiveButton("解除") {_,_->
-                stopConnection();busy=true;copyButton.isEnabled=false;renderState()
-                connectionTask {
-                    val success=try {
-                        val store=McpPairing(this)
-                        PublicMcpConnection(store::read,store::save,clear=store::clear).revoke {p ->
-                            val transport=WordTokTransport()
-                            try {
-                                val response=transport.request(McpRelayClient.validateBase(p.getString("base"))+"/device/close",
-                                    p.getString("deviceToken"),JSONObject())
-                                check(response.code in 200..299 || response.code==401)
-                            } finally {transport.close()}
-                        };true
-                    } catch(_:Exception) {false}
-                    runOnUiThread {if(alive) {
-                        busy=false;copyButton.isEnabled=true
-                        failure=if(success) null else "撤销未确认，原地址已保留，请联网后重试。"
-                        renderState()
-                        if(success) Toast.makeText(this,"配对已解除",Toast.LENGTH_SHORT).show()
-                    }}
-                }
-            }.show()
-    }
-    private fun copy(text:String) {
-        val clip=ClipData.newPlainText("WE MCP",text).apply {
-            if(android.os.Build.VERSION.SDK_INT>=33) description.extras=android.os.PersistableBundle().apply {putBoolean("android.content.extra.IS_SENSITIVE",true)}
-        }
-        getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
-        Toast.makeText(this,"MCP 地址已复制",Toast.LENGTH_SHORT).show()
-    }
-    override fun onResume() {super.onResume();handler.post(monitor)}
-    override fun onPause() {handler.removeCallbacks(monitor);super.onPause()}
-    override fun onDestroy() {alive=false;handler.removeCallbacksAndMessages(null);worker.shutdown();super.onDestroy()}
+    private fun denied()=WebResourceResponse("text/plain","UTF-8",404,"Not Found",emptyMap(),java.io.ByteArrayInputStream(ByteArray(0)))
 }

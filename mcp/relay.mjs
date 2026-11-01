@@ -8,7 +8,7 @@ export const tools=JSON.parse(readFileSync(new URL('../app/src/main/assets/we-mc
 const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
 const fingerprint=(name,args)=>createHash('sha256').update(JSON.stringify(canonical([name,args]))).digest('hex');
 const MUTATIONS=new Set(tools.filter(t=>!t.annotations.readOnlyHint).map(t=>t.name));
-export function createRelay({origins=[],timeout=25000,maxSessions=1000,dataFile=null,offlineAfter=20000,deliveryLease=20000,retention=7*86400000,pollWait=1000}={}){
+export function createRelay({origins=['https://localhost'],timeout=25000,maxSessions=1000,dataFile=null,offlineAfter=20000,deliveryLease=20000,retention=7*86400000,pollWait=1000}={}){
  const sessions=new Map(),devices=new Map();
  const save=()=>{if(!dataFile)return;mkdirSync(dirname(dataFile),{recursive:true,mode:0o700});const snapshot=[...sessions.values()].map(s=>({agent:s.agent,device:s.device,records:[...s.records.values()]}));const tmp=dataFile+'.tmp';writeFileSync(tmp,JSON.stringify({version:2,sessions:snapshot}),{mode:0o600});chmodSync(tmp,0o600);const fd=openSync(tmp,'r');try{fsyncSync(fd)}finally{closeSync(fd)}renameSync(tmp,dataFile);const dir=openSync(dirname(dataFile),'r');try{fsyncSync(dir)}finally{closeSync(dir)}};
  const restore=raw=>{const s={agent:raw.agent,device:raw.device,lastSeen:0,records:new Map((raw.records||[]).map(r=>[r.id,r])),waiters:new Map()};sessions.set(s.agent,s);devices.set(s.device,s);return s};
@@ -76,6 +76,6 @@ export function createRelay({origins=[],timeout=25000,maxSessions=1000,dataFile=
  }catch(e){console.error('Relay request failed:',e instanceof Error?e.message:'unknown');if(!res.headersSent)send(res,500,{error:'服务处理失败，查询原指令编号后再重试'})}});
  server.on('close',()=>{clearInterval(cleanup);for(const s of sessions.values())for(const id of s.waiters.keys())wake(s,id,{request_id:id,status:'unknown',error:'服务正在重启，请查询原编号',data_changed:'unknown'})});return server;
 }
-if(process.argv[1]===fileURLToPath(import.meta.url)){const origins=(process.env.ALLOWED_ORIGINS||'').split(',').filter(Boolean);createRelay({origins,dataFile:process.env.DATA_FILE||'./data/relay.json'}).listen(Number(process.env.PORT||8080),'0.0.0.0')}
+if(process.argv[1]===fileURLToPath(import.meta.url)){const origins=(process.env.ALLOWED_ORIGINS||'https://localhost').split(',').filter(Boolean);createRelay({origins,dataFile:process.env.DATA_FILE||'./data/relay.json'}).listen(Number(process.env.PORT||8080),'0.0.0.0')}
 
 
