@@ -1,5 +1,7 @@
 # WE 对外 MCP
 
+[现有能力与待补接口](capabilities.md) · [开发待办](../docs/ROADMAP.md)
+
 Android 执行工作区工具。公网中继仅转发 JSON 指令和结果，不运行 Agent，不接触 ChatGPT 订阅凭据；转发的内容包含被调用工具读取的资料和手写图像。复用 WordTok 的配对、队列、租约、持久回执与撤销协议，独立部署，不能共用 WordTok 配对或数据文件。
 
 ## 在 Android 使用

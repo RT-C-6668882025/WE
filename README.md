@@ -8,6 +8,8 @@ WE 是面向 Android 手机和平板的手写与 AI 工作应用，基于 [Molin
 
 当前源码版本：**v0.6.1 Preview**。可下载的 GitHub 版本以 Releases 页面为准。
 
+开发状态与后续安排：[待办清单](docs/ROADMAP.md) · [MCP 能力与接入准备](mcp/capabilities.md)。
+
 ## 怎么使用
 
 ### 首页：直接开始
