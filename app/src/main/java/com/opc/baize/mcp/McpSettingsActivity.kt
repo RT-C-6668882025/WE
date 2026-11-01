@@ -46,6 +46,18 @@ open class McpSettingsActivity : Activity() {
                 if(checked) connect(false) else stopConnection()
             }}
         };root.addView(connectionSwitch)
+        root.addView(Button(this).apply {text="重新连接";setOnClickListener {
+            if(!busy) {stopConnection();connect(false)}
+        }})
+        root.addView(Button(this).apply {text="允许锁屏后保持连接";setOnClickListener {
+            try {
+                val power=getSystemService(android.os.PowerManager::class.java)
+                if(power.isIgnoringBatteryOptimizations(packageName))
+                    Toast.makeText(this@McpSettingsActivity,"已允许后台运行",Toast.LENGTH_SHORT).show()
+                else startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:$packageName")))
+            } catch(_:Exception) {Toast.makeText(this@McpSettingsActivity,"请在系统电池设置中允许 WE 后台运行",Toast.LENGTH_LONG).show()}
+        }})
         root.addView(Button(this).apply {text="高级设置";setOnClickListener {if(!busy) advanced()}})
         label("地址包含访问密钥，只交给你信任的 Agent。连接期间通知栏会显示状态；网络或系统后台限制可能导致断开。")
         if(prefs.getBoolean("enabled",false)) connect(false)
@@ -108,14 +120,12 @@ open class McpSettingsActivity : Activity() {
                     val success=try {
                         val store=McpPairing(this)
                         PublicMcpConnection(store::read,store::save,clear=store::clear).revoke {p ->
-                            val http=McpRelayClient.http()
+                            val transport=WordTokTransport()
                             try {
-                                http.newCall(okhttp3.Request.Builder().url(McpRelayClient.validateBase(p.getString("base"))+"/device/close")
-                                    .header("Authorization","Bearer "+p.getString("deviceToken"))
-                                    .post(okhttp3.RequestBody.create(null,ByteArray(0))).build()).execute().use {
-                                        check(it.isSuccessful || it.code==401)
-                                    }
-                            } finally {http.connectionPool.evictAll();http.dispatcher.executorService.shutdown()}
+                                val response=transport.request(McpRelayClient.validateBase(p.getString("base"))+"/device/close",
+                                    p.getString("deviceToken"),JSONObject())
+                                check(response.code in 200..299 || response.code==401)
+                            } finally {transport.close()}
                         };true
                     } catch(_:Exception) {false}
                     runOnUiThread {if(alive) {
