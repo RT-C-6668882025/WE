@@ -422,6 +422,13 @@ class InkView(context: Context) : View(context) {
     // ---------- 提交侧接口 ----------
 
     /** 当前笔迹快照（引用列表；消散清场按身份把它们从 strokes 移除） */
+    /** Only pending input is editable; ink already handed to recognition is immutable. */
+    fun undoLastStroke(): Boolean {
+        if(fading || drawing || gestureActive || strokes.isEmpty()) return false
+        cancelCornerLongPress();clearPredictedTail();strokes.removeAt(strokes.lastIndex)
+        rebuildBitmap();return true
+    }
+
     fun snapshot(): List<MutableList<Pt>> = strokes.toList()
     fun draftSnapshot(): List<List<Pt>> = if(fading) emptyList() else strokes.map {it.toList()}
     fun restoreDraft(sourceWidth: Int,sourceHeight: Int,saved: List<List<Pt>>) {

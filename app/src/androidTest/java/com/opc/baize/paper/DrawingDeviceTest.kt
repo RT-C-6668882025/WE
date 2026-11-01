@@ -14,6 +14,25 @@ class DrawingDeviceTest {
         PaperStroke(listOf(InkPoint(20f,y,1f,0),InkPoint(140f,y,1f,100)),20f,color,"drawdance-v1",1,brush)
     private fun raster(renderer:LayerRenderer,page:PaperPage,preview:PaperStroke?=null): Bitmap =
         Bitmap.createBitmap(160,100,Bitmap.Config.ARGB_8888).also {renderer.draw(Canvas(it),page,preview)}
+    @Test fun drawingCanBeCreatedOpenedAndResumedWithoutReplacingLearningPages() {
+        val context=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val files=com.opc.baize.agent.WorkspaceFiles(context)
+        val workspace=files.create("drawing-open-regression")
+        try {
+            val first=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+            assertTrue(first.pdf.isFile)
+            AndroidPdfEngine(first.pdf).use {pdf ->
+                assertEquals(1,pdf.pageCount)
+                val rendered=pdf.render(0)
+                assertTrue(rendered.width>0 && rendered.height>0);rendered.bitmap.recycle()
+            }
+            val resumed=com.opc.baize.agent.WorkspaceDrawing.open(workspace)
+            assertEquals(first.pdf.canonicalPath,resumed.pdf.canonicalPath)
+            val second=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+            assertNotEquals(first.pdf.canonicalPath,second.pdf.canonicalPath)
+            assertTrue(first.pdf.isFile)
+        } finally {workspace.container.deleteRecursively()}
+    }
     @Test fun nativeLayersErasePreviewAndReplayMatch() {
         LayerRenderer().use {renderer ->
             val page=PaperPage(160,100,1,listOf(line(Color.RED)))

@@ -238,6 +238,16 @@ class HwHandwritingLayer private constructor(
     } catch (t: Throwable) { 0f }
 
     /** 清屏，备下一轮书写。翻页/清空/提交后调。反射失败只记 Log。 */
+    fun undoLastStroke(): Boolean = try {
+        val before=inkFingerprint()
+        if(before.first==0) false else {
+            cls.getMethod("undo").invoke(view)
+            inkFingerprint()!=before
+        }
+    } catch(t: Throwable) {
+        Log.i(TAG,"undo unavailable (${t.javaClass.simpleName})");false
+    }
+
     fun clear() {
         try {
             cls.getMethod("clear").invoke(view)

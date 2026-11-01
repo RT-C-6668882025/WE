@@ -392,6 +392,7 @@ class MainActivity : Activity() {
         val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; homeInputs = inputs
         fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; minWidth=0; minimumWidth=0; textSize=13f;setPadding(px(8f),px(4f),px(8f),px(4f));setOnClickListener { action() } }) }
         inputButton("手写") { ink.visibility=View.VISIBLE; android.widget.Toast.makeText(this,"直接在首页书写",android.widget.Toast.LENGTH_SHORT).show() }
+        inputButton("撤回") { undoHomeInk() }
         inputButton("发送") { if(canSwitchTask()) onIdleTimeout() }
         inputButton("绘画") { if (canSwitchTask()) openWorkspaceDrawing() }
         inputButton("打字") {
@@ -897,6 +898,17 @@ class MainActivity : Activity() {
     }
 
     // ---------- 长按左上角：清空全书 ----------
+
+    private fun undoHomeInk() {
+        cancelIdleTimer();refresh.exitWriting()
+        val layer=hwLayer
+        val undone=if(layer!=null) {
+            if(submitInFlight) false else layer.undoLastStroke()
+        } else ink.undoLastStroke()
+        if(undone) {
+            idleDetector.reset();pollWasGrowing=false;saveHomeDraft()
+        } else android.widget.Toast.makeText(this,"当前没有可撤回的笔迹",android.widget.Toast.LENGTH_SHORT).show()
+    }
 
     private fun saveHomeDraft() {
         if(!::ink.isInitialized || hwActive() || ink.width<=0 || ink.height<=0) return

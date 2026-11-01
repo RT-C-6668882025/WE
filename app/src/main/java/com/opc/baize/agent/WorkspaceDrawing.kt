@@ -9,6 +9,8 @@ import android.util.AtomicFile
 /** Drawing identity is independent of the latest AI learning page and conversation view. */
 object WorkspaceDrawing {
     data class Document(val pdf: File,val sourcePath: String)
+    internal fun blankContent(): JSONObject = JSONObject().put("we_page",1).put("mode","drawing").put("title","绘画")
+        .put("blocks",JSONArray().put(JSONObject().put("id","canvas").put("type","drawing").put("height",500).put("grid","blank")))
     @Synchronized fun open(workspace: WeWorkspace,newDrawing: Boolean=false): Document {
         val directory=File(workspace.root,"memory/pages/drawings").apply {mkdirs()}
         val pointer=AtomicFile(File(workspace.container,"active-drawing.json"))
@@ -33,8 +35,7 @@ object WorkspaceDrawing {
             }
         }
         val id=UUID.randomUUID().toString();val source=File(directory,"$id.json");val pdf=File(directory,"$id.pdf")
-        val content=JSONObject().put("we_page",1).put("mode","drawing").put("title","绘画")
-            .put("blocks",JSONArray().put(JSONObject().put("id","canvas").put("type","drawing").put("height",700).put("grid","blank")))
+        val content=blankContent()
         try {
             LearningTurn.write(source,content.toString());LearningPageRenderer.render(source,pdf,true)
             // A valid trailing PDF comment gives each independent drawing a distinct content identity.
