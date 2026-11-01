@@ -33,6 +33,53 @@ class DrawingDeviceTest {
             assertTrue(first.pdf.isFile)
         } finally {workspace.container.deleteRecursively()}
     }
+    @Test fun mcpEditsTheVisibleCanvasAndExportsTheSameRevision() {
+        val instrumentation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("统一画布验收")
+        val doc=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+        val activity=instrumentation.startActivitySync(android.content.Intent(context,PaperActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("workspace",workspace.id)
+            .putExtra("generatedPdf",doc.pdf.path).putExtra("sourcePath",doc.sourcePath)) as PaperActivity
+        try {
+            lateinit var ink:PaperInkView
+            val deadline=System.currentTimeMillis()+15000
+            var ready=false
+            while(!ready && System.currentTimeMillis()<deadline) {
+                instrumentation.runOnMainSync {
+                    ink=PaperActivity::class.java.getDeclaredField("ink").apply {isAccessible=true}.get(activity) as PaperInkView
+                    ready=ink.page.width>1 && activity.hasWindowFocus()
+                }
+                if(!ready) Thread.sleep(50)
+            }
+            assertTrue("Canvas did not load",ready)
+            val tools=com.opc.baize.mcp.WorkspaceMcpTools(context)
+            val input=org.json.JSONObject().put("workspace_id",workspace.id).put("path","/"+doc.pdf.relativeTo(workspace.root).path)
+            val live=tools.execute("get_canvas_context",org.json.JSONObject().put("workspace_id",workspace.id))
+                .getJSONObject("result").getJSONObject("active")
+            assertEquals(0L,live.getLong("revision"))
+            val edited=tools.execute("edit_canvas",org.json.JSONObject(input.toString()).put("expected_revision",0)
+                .put("operation_id","visible-"+java.util.UUID.randomUUID()).put("operations",org.json.JSONArray("""[
+                    {"action":"add_layer","name":"AI 绘图"},
+                    {"action":"rectangle","x":100,"y":100,"x2":400,"y2":300,"color":"#1955AF","width":4},
+                    {"action":"line","x":100,"y":100,"x2":400,"y2":300,"color":"#BF2828","width":3}
+                ]""")))
+            assertEquals("succeeded",edited.getString("status"))
+            instrumentation.runOnMainSync {assertEquals(1L,ink.page.revision);assertEquals(2,ink.page.strokes.size)}
+            val image=tools.execute("export_canvas",org.json.JSONObject(input.toString()).put("expected_revision",1)
+                .put("operation_id","visible-export-"+java.util.UUID.randomUUID()))
+            assertEquals("succeeded",image.getString("status"))
+            assertEquals(1L,image.getJSONObject("result").getLong("revision"))
+            instrumentation.waitForIdleSync()
+            instrumentation.uiAutomation.takeScreenshot()?.let {bitmap ->
+                val file=java.io.File(activity.getExternalFilesDir("ui-checks"),"unified-canvas.png")
+                try {file.outputStream().use {bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}} finally {bitmap.recycle()}
+            }
+        } finally {
+            instrumentation.runOnMainSync {activity.finish()}
+            instrumentation.waitForIdleSync(); workspace.container.deleteRecursively()
+        }
+    }
     @Test fun nativeLayersErasePreviewAndReplayMatch() {
         LayerRenderer().use {renderer ->
             val page=PaperPage(160,100,1,listOf(line(Color.RED)))

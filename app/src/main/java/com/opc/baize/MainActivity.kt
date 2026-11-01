@@ -197,8 +197,7 @@ class MainActivity : Activity() {
         // 成功 → 停用 InkView 的输入与自绘、书写走驱动直写（写一点出一点）。任一步失败 →
         // hwLayer 保持 null，无缝回退 InkView 自绘+预测老路（非华为设备的常规路径）。
         // 生效与否全靠 adb logcat -s BaizeHW 判断。
-        // Home handwriting stays on this screen; drawing is a separate editor in the same workspace.
-        if (useDirectInk() && HwHandwritingLayer.isFrameworkPresent()) installHwLayer()
+        // Writing and drawing now both enter PaperActivity; keep the legacy reader for history.
 
 
         restoreHomeDraft()
@@ -210,7 +209,13 @@ class MainActivity : Activity() {
             else book.resetBook(Texts.INTRO_TEXT)
             // 首次启动：弹欢迎 → 一键打开设置面板【设置】区，引导填大模型 API
             if (!prefs.getBoolean("firstRunDone", false)) showFirstRunGuide()
+            else if (savedInstanceState == null) showPanel(if(intent.getBooleanExtra("openSettings",false)) TAB_SETTINGS else TAB_WORKSPACES)
         }
+    }
+
+    override fun onNewIntent(next: android.content.Intent) {
+        super.onNewIntent(next); intent=next
+        if(next.getBooleanExtra("openSettings",false)) showPanel(TAB_SETTINGS)
     }
 
     /** 首次打开引导：填过 API（或点“稍后”）即置 firstRunDone，之后不再弹。 */
@@ -393,15 +398,14 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; homeInputs = inputs
         fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; minWidth=0; minimumWidth=0; textSize=13f;setPadding(px(8f),px(4f),px(8f),px(4f));setOnClickListener { action() } }) }
-        inputButton("手写") { ink.visibility=View.VISIBLE; android.widget.Toast.makeText(this,"直接在首页书写",android.widget.Toast.LENGTH_SHORT).show() }
-        inputButton("撤回") { undoHomeInk() }
-        inputButton("发送") { if(canSwitchTask()) onIdleTimeout() }
-        inputButton("绘画") { if (canSwitchTask()) openWorkspaceDrawing() }
-        inputButton("打字") {
-            if(canSwitchTask()) {
-                val editor=android.widget.EditText(this).apply {hint="写下需求";minLines=2}
-                AlertDialog.Builder(this).setTitle("输入").setView(editor).setNegativeButton("取消",null)
-                    .setPositiveButton("发送") {_,_->submitText(editor.text.toString())}.show()
+        ink.visibility = View.GONE
+        inputButton("工作区") { showPanel(TAB_WORKSPACES) }
+        inputButton("画布") { if (canSwitchTask()) openWorkspaceCanvas() }
+        inputButton("对话") {
+            if (canSwitchTask()) {
+                val workspace = WorkspaceFiles(this).forSession(Session(curSessionId,curSessionTs,curTurns.toList()))
+                startActivity(android.content.Intent(this,com.opc.baize.agent.AgentWorkspaceActivity::class.java)
+                    .putExtra("workspace",workspace.id))
             }
         }
         root.addView(inputs, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = px(10f); bottomMargin = px(8f) })
@@ -1165,6 +1169,7 @@ class MainActivity : Activity() {
         }
         fun gap(dp: Float) = col.addView(View(this), LinearLayout.LayoutParams(1, pxOf(dp)))
 
+        val appearanceStart=col.childCount
         // (a) 字体设置 —— 字号滑杆
         col.addView(sectionTitle("字体"))
         gap(8f)
@@ -1245,6 +1250,8 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
+        val appearanceViews=(appearanceStart until col.childCount).map {col.getChildAt(it)}
+        appearanceViews.forEach {col.removeView(it)}
         col.addView(sectionTitle("模型通道"))
         val providerChoices = android.widget.Spinner(this).apply {
             adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
@@ -1317,6 +1324,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
+        appearanceViews.forEach {col.addView(it)}
         // (c) 手写识别降级通道（可选）：无 Google 服务的设备（华为等）本机识别不可用，
         //     可自建 server.py 识别服务并在此填地址；留空 = 只用本机 ML Kit。
         col.addView(sectionTitle("手写识别（可选）"))
@@ -1377,8 +1385,9 @@ class MainActivity : Activity() {
                 cancelIdleTimer(); clearWritingSurface()
                 if (hwActive()) { idleDetector.reset(); pollWasGrowing = false }
                 startNewSession(); memory.clear(); store.clear()
-                files.forSession(Session(curSessionId, curSessionTs, emptyList()))
+                val created = files.forSession(Session(curSessionId, curSessionTs, emptyList()))
                 book.resetBook(Texts.INTRO_TEXT); setStatus("idle"); panelDialog?.dismiss()
+                openWorkspaceCanvas(created)
             }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         toolbar.addView(android.widget.Button(this).apply {
@@ -1469,7 +1478,7 @@ class MainActivity : Activity() {
                     if (!canSwitchTask()) return@setOnClickListener
                     val target = session ?: Session(files.sessionId(workspace) ?: "w_${workspace.id}", System.currentTimeMillis(), emptyList())
                     files.attachSession(workspace, target.id); files.manage(workspace, "open")
-                    openHistorySession(target); panelDialog?.dismiss()
+                    openHistorySession(target); panelDialog?.dismiss(); openWorkspaceCanvas(workspace)
             }
             row.addView(info, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(android.widget.Button(this).apply {
@@ -1523,7 +1532,7 @@ class MainActivity : Activity() {
         val management = WorkspaceFiles(this).state(workspace)
         AlertDialog.Builder(this).setTitle(workspace.name)
             .setItems(arrayOf("打开最近学习页", "导入 PDF", "查看文件", "重命名", "移到回收站",
-                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档", "识别与批改记录", "继续绘画", "新建绘画")) { _, which ->
+                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档", "识别与批改记录", "打开画布", "新建空白页")) { _, which ->
                 when (which) {
                     0 -> {
                         val pdf = LearningTurn.latestReady(workspace)
@@ -1552,8 +1561,8 @@ class MainActivity : Activity() {
                             }
                         } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this,e.message,android.widget.Toast.LENGTH_LONG).show() } }
                     }
-                    8 -> openWorkspaceDrawing(workspace)
-                    9 -> openWorkspaceDrawing(workspace,true)
+                    8 -> openWorkspaceCanvas(workspace)
+                    9 -> openWorkspaceCanvas(workspace,true)
                     3 -> {
                         val editor = android.widget.EditText(this).apply { setText(workspace.name) }
                         AlertDialog.Builder(this).setTitle("工作区名称").setView(editor).setNegativeButton("取消", null)
@@ -1585,17 +1594,20 @@ class MainActivity : Activity() {
             } catch (e: Exception) { ui.post { android.widget.Toast.makeText(this, e.message, android.widget.Toast.LENGTH_LONG).show() } }
         }
     }
-    private fun openWorkspaceDrawing(selected: WeWorkspace?=null,newDrawing: Boolean=false) {
+    private fun openWorkspaceCanvas(selected: WeWorkspace?=null,newDrawing: Boolean=false) {
         val session=Session(curSessionId,curSessionTs,curTurns.toList())
         cancelIdleTimer()
         worker.execute {
             try {
                 val workspace=selected ?: WorkspaceFiles(this).forSession(session)
-                val drawing=WorkspaceDrawing.open(workspace,newDrawing)
+                val last = prefs.getString("paper_last_pdf_${workspace.id}",null)?.let { File(it).canonicalFile }
+                    ?.takeIf { it.isFile && it.path.startsWith(workspace.root.canonicalPath + "/memory/pages/") }
+                val drawing = if (!newDrawing && last != null)
+                    WorkspaceDrawing.Document(last,WorkspaceDrawing.sourcePath(workspace,last).orEmpty()) else WorkspaceDrawing.open(workspace,newDrawing)
                 ui.post {startActivity(android.content.Intent(this,com.opc.baize.paper.PaperActivity::class.java)
                     .putExtra("workspace",workspace.id).putExtra("generatedPdf",drawing.pdf.path)
-                    .putExtra("sourcePath",drawing.sourcePath).putExtra("entryMode","drawing"))}
-            } catch(e:Exception) {ui.post {android.widget.Toast.makeText(this,"绘画打开失败：${e.message}",android.widget.Toast.LENGTH_LONG).show()}}
+                    .putExtra("sourcePath",drawing.sourcePath))}
+            } catch(e:Exception) {ui.post {android.widget.Toast.makeText(this,"画布打开失败：${e.message}",android.widget.Toast.LENGTH_LONG).show()}}
         }
     }
     @Deprecated("Platform callback")
@@ -1638,7 +1650,7 @@ class MainActivity : Activity() {
         )
         para("WE · Write Everything", 20f, inkDark)
         para("版本：${com.opc.baize.BuildConfig.VERSION_NAME}")
-        para("写下需求，继续工作。首页直接手写与打字，绘画使用独立编辑器；同一工作区关联对话、资料、作品和生成页面。")
+        para("写下需求，继续工作。工作区内的手写、绘画与 PDF 批注共用画布；笔刷预设只改变工具，不切换页面。对话、资料、作品和生成页面保存在同一工作区。")
         para("项目维护：RT · RT-C-6668882025")
         para("协议：GPL-3.0")
         para("这是一款自由开源软件（GPL-3.0）。你可以自由使用、研究、修改与再分发，" +

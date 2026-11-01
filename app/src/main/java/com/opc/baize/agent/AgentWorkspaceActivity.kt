@@ -19,6 +19,7 @@ class AgentWorkspaceActivity : Activity() {
     private lateinit var choice: Spinner
     private lateinit var output: TextView
     private lateinit var info: TextView
+    private lateinit var stop: Button
     private lateinit var input: EditText
     private val controls = mutableListOf<android.view.View>()
     private var workspaces = emptyList<WeWorkspace>()
@@ -28,20 +29,31 @@ class AgentWorkspaceActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); files = WorkspaceFiles(this)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24) }
-        setContentView(ScrollView(this).apply { addView(root) })
+        root.setBackgroundColor(android.graphics.Color.rgb(246,241,228))
+        setContentView(root)
         fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; root.addView(this) }
-        label("WE 工作区", 26f)
-        label("写下需求，自动生成可书写的页面；继续写、画或修改，Agent 接着完成。")
+        label("工作区对话", 22f)
+
         choice = Spinner(this); root.addView(choice); controls += choice
-        button(root, "新建工作区") {
+        val settings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        button(settings, "新建工作区") {
             val name = EditText(this).apply { hint = "工作区名称" }
             AlertDialog.Builder(this).setTitle("新建工作区").setView(name).setNegativeButton("取消", null)
                 .setPositiveButton("创建") { _, _ -> safe { val created = files.create(name.text.toString()); reload(created.id) } }.show()
         }
-        info = label("")
-        val settings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
-        button(root, "工作区设置") { settings.visibility = if (settings.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE }
-        root.addView(settings)
+        info = TextView(this).apply { textSize = 13f }; settings.addView(info)
+        val navigation = LinearLayout(this)
+        root.addView(navigation)
+        button(navigation, "画布") { openCanvas() }
+        button(navigation, "设置") {
+            (settings.parent as? android.view.ViewGroup)?.removeView(settings)
+            AlertDialog.Builder(this).setTitle("工作区设置").setView(ScrollView(this).apply { addView(settings) })
+                .setPositiveButton("关闭",null).show()
+        }
+        button(settings, "AI 模型设置") {
+            startActivity(Intent(this,com.opc.baize.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openSettings",true))
+        }
         button(settings, "导入 Skill 文件夹") {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), IMPORT_SKILL)
         }
@@ -54,17 +66,20 @@ class AgentWorkspaceActivity : Activity() {
                     files.saveMcp(workspace, editor.text.toString()); resetRuntime(); showInfo()
                 } }.show()
         }
-        button(root, "继续上次学习") { LearningTurn.latestReady(current())?.let { openPaper(it, true) } ?: openPaper(null, true) }
         button(settings, "查看工作区文件 / 打开手写页") { showFiles() }
-        button(root, "新建空白手写页") { openPaper(null, true) }
         input = EditText(this).apply { hint = "写下目标，或指定要调用的 Skill"; minLines = 3; gravity = android.view.Gravity.TOP; textSize = 18f }
         root.addView(input); controls += input
-        button(root, "开始") { val text = input.text.toString().trim(); if (text.isNotEmpty()) run(text) }
+        button(root, "发送") { val text = input.text.toString().trim(); if (text.isNotEmpty()) run(text) }
         button(settings, "验证本机工具调用（使用订阅额度）") {
             run("请使用工作区文件工具创建 /memory/pages/we-native-probe-${System.currentTimeMillis()}.md，内容为 WE_NATIVE_OK；然后用读取工具读取该文件，最后报告读取结果。必须实际调用工具。")
         }
-        root.addView(Button(this).apply { text = "停止当前任务"; setOnClickListener { job?.cancel(); output.append("\n已请求停止。") } })
-        output = label("", 17f).apply { setTextIsSelectable(true) }
+        stop = Button(this).apply {
+            text = "停止"; visibility = android.view.View.GONE
+            setOnClickListener { job?.cancel(); output.append("\n已请求停止。") }
+        }; root.addView(stop)
+        output = label("", 17f).apply { setTextIsSelectable(true); setTextColor(android.graphics.Color.rgb(58,53,44)) }
+        root.removeView(output)
+        root.addView(ScrollView(this).apply { addView(output) },3,LinearLayout.LayoutParams(-1,0,1f))
         choice.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
                 resetRuntime(); showInfo()
@@ -94,7 +109,7 @@ class AgentWorkspaceActivity : Activity() {
     private fun resetRuntime() { runtime?.close(); runtime = null; runtimeWorkspace = "" }
     private fun run(text: String) {
         if (job?.isActive == true) return
-        val workspace = current(); controls.forEach { it.isEnabled = false }
+        val workspace = current(); controls.forEach { it.isEnabled = false }; stop.visibility = android.view.View.VISIBLE
         output.append("\n你：$text\n")
         job = scope.launch {
             val answer = StringBuilder()
@@ -126,7 +141,7 @@ class AgentWorkspaceActivity : Activity() {
                 openPaper(pdf, true)
             } catch (e: CancellationException) { resetRuntime(); throw e }
             catch (e: Exception) { output.append("\n未完成：${e.message?.take(160) ?: e.javaClass.simpleName}"); resetRuntime() }
-            finally { controls.forEach { it.isEnabled = true } }
+            finally { controls.forEach { it.isEnabled = true }; stop.visibility = android.view.View.GONE }
         }
     }
     private fun confirm(owner: AgentRuntime, pending: PendingConfirmation, tool: String) {
@@ -154,6 +169,21 @@ class AgentWorkspaceActivity : Activity() {
                 .setNeutralButton("紧凑手写页") { _, _ -> openPaper(file, false) }
                 .setNegativeButton("关闭", null).show()
         }.setNegativeButton("关闭", null).show()
+    }
+    private fun openCanvas() {
+        val workspace = current()
+        scope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) { WorkspaceDrawing.open(workspace) }
+                val prefs = getSharedPreferences("moling",MODE_PRIVATE)
+                val last = prefs.getString("paper_last_pdf_${workspace.id}",null)?.let { java.io.File(it).canonicalFile }
+                    ?.takeIf { it.isFile && it.path.startsWith(workspace.root.canonicalPath+"/memory/pages/") }
+                val pdf = last ?: page.pdf
+                startActivity(Intent(this@AgentWorkspaceActivity,com.opc.baize.paper.PaperActivity::class.java)
+                    .putExtra("workspace",workspace.id).putExtra("generatedPdf",pdf.path)
+                    .putExtra("sourcePath",WorkspaceDrawing.sourcePath(workspace,pdf)))
+            } catch (e: Exception) { output.append("\n打开画布失败：${e.message}") }
+        }
     }
     private fun openPaper(source: java.io.File?, spacious: Boolean) {
         val workspace = current()
