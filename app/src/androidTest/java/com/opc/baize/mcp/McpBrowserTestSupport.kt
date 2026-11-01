@@ -19,7 +19,7 @@ internal object McpBrowserTestSupport {
         val deadline=android.os.SystemClock.elapsedRealtime()+15000
         while(android.os.SystemClock.elapsedRealtime()<deadline){
             val done=CountDownLatch(1);var ready=false
-            instrumentation.runOnMainSync {page.evaluateJavascript("Boolean(window.weConnection)"){ready=it=="true";done.countDown()}}
+            instrumentation.runOnMainSync {page.evaluateJavascript("Boolean(window.weConnection && !document.getElementById('pair').disabled)"){ready=it=="true";done.countDown()}}
             done.await(2,TimeUnit.SECONDS)
             if(ready)return
             android.os.SystemClock.sleep(50)

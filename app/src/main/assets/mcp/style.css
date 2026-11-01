@@ -1,5 +1,5 @@
 /* WordTok connection card styles, unchanged. */
-*{box-sizing:border-box}body{margin:0;padding:18px;background:#f3f2ee;color:#171717;font-family:system-ui,sans-serif}button{border:1px solid #d5d2c9;border-radius:10px;background:#eeede8;color:#171717;cursor:pointer}button.primary{background:#272722;color:#fff;border-color:#272722}button:disabled{opacity:.5}header{display:flex;align-items:center;justify-content:space-between}header h1{font-size:20px}header button{padding:10px 16px}
+:root{font-family:Inter,"Noto Sans SC",system-ui,sans-serif;color:#171717;background:#f4f3ef;font-synthesis:none}*{box-sizing:border-box}body{margin:0;padding:18px}button,input,textarea{font:inherit}button{border:1px solid #cbc8bf;background:transparent;border-radius:10px;padding:10px 15px;cursor:pointer}.primary{background:#171717;color:#fff;border-color:#171717;font-weight:650}button:disabled{opacity:.32;cursor:not-allowed}
 .aiCard{margin-top:28px;padding:26px;border:1px solid #d8d6cf;border-radius:20px;background:#faf9f6;color:#171717;min-width:0}
 .aiCardHeader{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .aiEyebrow{display:block;color:#8a877f;font-size:10px;font-weight:700;letter-spacing:.16em;margin-bottom:6px}

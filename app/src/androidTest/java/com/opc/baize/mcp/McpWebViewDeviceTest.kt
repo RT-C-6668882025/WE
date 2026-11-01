@@ -13,11 +13,11 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class McpWebViewDeviceTest {
-    class FixtureBridge(private val activity:android.app.Activity,private val relay:String) {
+    class FixtureBridge(private val activity:android.app.Activity,private val relay:String) : McpPageBridge {
         lateinit var page:WebView
         private val main=android.os.Handler(android.os.Looper.getMainLooper())
         private val store=McpPairing(activity)
-        @JavascriptInterface fun request(id:String,method:String,payload:String) {
+        @JavascriptInterface override fun request(id:String,method:String,payload:String) {
             val value:Any?=when(method) {
                 "load" -> store.read()?.let{McpConnectionConfig.toWordTok(it)}
                 "save" -> {store.save(McpConnectionConfig.fromWordTok(JSONObject(payload)));true}

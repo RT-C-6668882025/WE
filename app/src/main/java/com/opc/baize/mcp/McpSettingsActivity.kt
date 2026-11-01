@@ -18,8 +18,8 @@ class McpSettingsActivity : Activity() {
         page=McpWebPage.create(this,Bridge())
         setContentView(page)
     }
-    inner class Bridge {
-        @JavascriptInterface fun request(id:String,method:String,payload:String) {
+    inner class Bridge : McpPageBridge {
+        @JavascriptInterface override fun request(id:String,method:String,payload:String) {
             if(!id.matches(Regex("[0-9]{1,10}")) || !alive) return
             worker.execute {
                 try {
@@ -67,11 +67,15 @@ class McpSettingsActivity : Activity() {
     }
 }
 
+interface McpPageBridge {
+    @JavascriptInterface fun request(id:String,method:String,payload:String)
+}
+
 /** A secure localhost origin, matching Capacitor's androidScheme=https default in WordTok. */
 internal object McpWebPage {
     const val URL="https://localhost/mcp/index.html"
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
-    fun create(context:android.content.Context,bridge:Any,client:McpWebPageClient=McpWebPageClient(context)):WebView = WebView(context).apply {
+    fun create(context:android.content.Context,bridge:McpPageBridge,client:McpWebPageClient=McpWebPageClient(context)):WebView = WebView(context).apply {
         settings.javaScriptEnabled=true
         settings.domStorageEnabled=true
         settings.allowFileAccess=false;settings.allowContentAccess=false
