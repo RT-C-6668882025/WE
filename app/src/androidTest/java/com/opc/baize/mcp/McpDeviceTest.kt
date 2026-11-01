@@ -97,11 +97,26 @@ class McpDeviceTest {
         org.junit.Assume.assumeTrue(store.read() == null)
         val token = "pairing-fixture-${java.util.UUID.randomUUID()}"
         try {
-            store.save(org.json.JSONObject().put("deviceToken", token).put("base", "https://fixture.example"))
-            org.junit.Assert.assertEquals(token, McpPairing(context).read()!!.getString("deviceToken"))
+            store.save(org.json.JSONObject().put("deviceToken", "b".repeat(64)).put("agentToken","a".repeat(64)).put("fixture",token).put("base", "https://fixture.example"))
+            org.junit.Assert.assertEquals(token, McpPairing(context).read()!!.getString("fixture"))
             val bytes = java.io.File(context.noBackupFilesDir, "we-mcp-pairing.enc").readBytes()
             org.junit.Assert.assertFalse(bytes.toString(Charsets.ISO_8859_1).contains(token))
         } finally { store.clear() }
         org.junit.Assert.assertNull(McpPairing(context).read())
+    }
+    @Test fun encryptedOfficial443PairMovesTo8444AndSurvivesRecreation() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val store=McpPairing(context)
+        org.junit.Assume.assumeTrue(store.read()==null)
+        try {
+            store.save(org.json.JSONObject().put("base","https://we.wordrelay.dpdns.org:443")
+                .put("agentToken","a".repeat(64)).put("deviceToken","b".repeat(64)))
+            val moved=requireNotNull(store.read())
+            org.junit.Assert.assertEquals(McpConnectionConfig.DEFAULT_RELAY,moved.getString("base"))
+            val restored=requireNotNull(McpPairing(context).read())
+            org.junit.Assert.assertEquals(McpConnectionConfig.DEFAULT_RELAY,restored.getString("base"))
+            org.junit.Assert.assertTrue("Agent identity changed",restored.getString("agentToken")=="a".repeat(64))
+            org.junit.Assert.assertTrue("Device identity changed",restored.getString("deviceToken")=="b".repeat(64))
+        }finally{store.clear()}
     }
 }

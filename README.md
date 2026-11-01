@@ -55,7 +55,7 @@ MCP 优先生成可直接落笔的内容：题目配答题留白，正文旁留�
 
 新增对外 MCP：设置 → **Agent 连接 · MCP**。同一 Android 的原生客户端可直接连接本机端点；外部 Agent 可读工作区与手写页面图像、读写资料/Skill，并发布新的学习页。写入有 operation_id 回执和版本检查，原页与笔迹保留。
 
-WordTok 式固定公网地址采用“HTTPS 中继转发、Android 执行”的配对结构，源码及部署步骤见 [MCP 连接](mcp/README.md)。公网中继已预设为 `https://we.wordrelay.dpdns.org`；连接流程与 WordTok 统一：进入 MCP 设置首次点击“配对连接”，随后“复制连接地址”；以后打开应用自动连接。已有配对和固定地址保留；不能使用 WordTok 原地址。
+WordTok 式固定公网地址采用“HTTPS 中继转发、Android 执行”的配对结构，源码及部署步骤见 [MCP 连接](mcp/README.md)。公网中继已预设为 `https://we.wordrelay.dpdns.org:8444`；连接流程与 WordTok 统一：进入 MCP 设置首次点击“配对连接”，随后“复制连接地址”；以后打开应用自动连接。已有配对密钥保留；旧 443 地址需重新复制为 8444 地址，不能使用 WordTok 原地址。
 
 当前生成页面以文本学习纸为主。可编辑图形框架、任意 Python/Node Skill 脚本、MCP OAuth 和 stdio 传输尚未支持。DSH Go、RikkaHub、Excalidraw 和 Jetpack Ink 为已研究的候选，未集成。具体见 [实现、验证与边界](docs/research/continuous-learning.md)。Google Drive 同步暂未接入。
 

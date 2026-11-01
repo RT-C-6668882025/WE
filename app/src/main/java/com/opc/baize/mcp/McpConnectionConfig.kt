@@ -4,7 +4,14 @@ import org.json.JSONObject
 
 /** WordTok connection shape at the WebView boundary; preserve existing WE encrypted identities. */
 internal object McpConnectionConfig {
-    const val DEFAULT_RELAY = "https://we.wordrelay.dpdns.org"
+    const val DEFAULT_RELAY = "https://we.wordrelay.dpdns.org:8444"
+    /** Only the former official WE 443 endpoint moves. Custom relays and credentials stay intact. */
+    fun migrateLegacyEndpoint(pairing: JSONObject): JSONObject? {
+        toWordTok(pairing)
+        val uri=java.net.URI(pairing.getString("base"))
+        if(!uri.host.equals("we.wordrelay.dpdns.org",ignoreCase=true) || uri.port !in setOf(-1,443))return null
+        return JSONObject(pairing.toString()).put("base",DEFAULT_RELAY)
+    }
     fun validateBase(raw: String): String {
         val uri=java.net.URI(raw)
         require(uri.scheme=="https" && !uri.host.isNullOrBlank() && uri.userInfo==null && uri.query==null && uri.fragment==null && uri.path.orEmpty() in setOf("", "/"))

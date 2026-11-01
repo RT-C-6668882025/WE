@@ -14,6 +14,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Separate Keystore alias and file; never touches the existing subscription session. */
 class McpPairing(private val context: Context) {
+    companion object {private val lock=Any()}
     private val file = AtomicFile(File(context.noBackupFilesDir, "we-mcp-pairing.enc"))
     private val alias = "we.mcp.pairing.v1"
     private fun key(create: Boolean): SecretKey {
@@ -27,7 +28,12 @@ class McpPairing(private val context: Context) {
         }
         return store.getKey(alias, null) as SecretKey
     }
-    fun read(): JSONObject? {
+    fun read(): JSONObject? = synchronized(lock) {
+        val stored=readStored() ?: return@synchronized null
+        val migrated=McpConnectionConfig.migrateLegacyEndpoint(stored)
+        if(migrated!=null) {write(migrated);migrated} else stored
+    }
+    private fun readStored(): JSONObject? {
         val bytes = try { file.openRead().use { it.readBytes() } } catch (_: java.io.FileNotFoundException) { return null }
         require(bytes.size in 29..8192)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
@@ -35,10 +41,11 @@ class McpPairing(private val context: Context) {
         }
         return JSONObject(cipher.doFinal(bytes.copyOfRange(12, bytes.size)).toString(Charsets.UTF_8))
     }
-    fun save(value: JSONObject) {
+    fun save(value: JSONObject) = synchronized(lock) {write(value)}
+    private fun write(value: JSONObject) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key(true)); updateAAD(context.packageName.toByteArray()) }
         val bytes = cipher.doFinal(value.toString().toByteArray()); val out = file.startWrite()
         try { out.write(cipher.iv); out.write(bytes); file.finishWrite(out) } catch (e: Exception) { file.failWrite(out); throw e }
     }
-    fun clear() { file.delete() }
+    fun clear() = synchronized(lock) {file.delete()}
 }
