@@ -9,6 +9,8 @@ const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Obje
 const fingerprint=(name,args)=>createHash('sha256').update(JSON.stringify(canonical([name,args]))).digest('hex');
 const MUTATIONS=new Set(tools.filter(t=>!t.annotations.readOnlyHint).map(t=>t.name));
 export function createRelay({origins=['https://localhost'],timeout=25000,maxSessions=1000,dataFile=null,offlineAfter=20000,deliveryLease=20000,retention=7*86400000,pollWait=1000}={}){
+ // The Android WebView app origin is required even when an older launcher passes origins=[].
+ origins=[...new Set([...origins,'https://localhost'])];
  const sessions=new Map(),devices=new Map();
  const save=()=>{if(!dataFile)return;mkdirSync(dirname(dataFile),{recursive:true,mode:0o700});const snapshot=[...sessions.values()].map(s=>({agent:s.agent,device:s.device,records:[...s.records.values()]}));const tmp=dataFile+'.tmp';writeFileSync(tmp,JSON.stringify({version:2,sessions:snapshot}),{mode:0o600});chmodSync(tmp,0o600);const fd=openSync(tmp,'r');try{fsyncSync(fd)}finally{closeSync(fd)}renameSync(tmp,dataFile);const dir=openSync(dirname(dataFile),'r');try{fsyncSync(dir)}finally{closeSync(dir)}};
  const restore=raw=>{const s={agent:raw.agent,device:raw.device,lastSeen:0,records:new Map((raw.records||[]).map(r=>[r.id,r])),waiters:new Map()};sessions.set(s.agent,s);devices.set(s.device,s);return s};

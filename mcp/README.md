@@ -38,7 +38,7 @@ docker run -d --name we-mcp-relay --restart unless-stopped \
   -p 127.0.0.1:8787:8080 -v we-mcp-data:/data we-mcp-relay
 ```
 
-用 Caddy/Nginx 将独立域名的 HTTPS 转发到 `127.0.0.1:8787`，示例见 Caddyfile.example。不要记录 MCP 路径或 Authorization 头。`GET /health` 应返回 name=write-everything、protocol=2、persistent=true。与 WordTok 一样，首次配对由 Android WebView 的 `fetch` 完成；默认精确允许应用来源 `https://localhost`。其他浏览器来源默认拒绝，可通过 `ALLOWED_ORIGINS` 精确列出受信任 Origin，不要使用通配符。旧部署若显式传入空 origins，需要升级 WE 启动文件以允许该来源。
+用 Caddy/Nginx 将独立域名的 HTTPS 转发到 `127.0.0.1:8787`，示例见 Caddyfile.example。不要记录 MCP 路径或 Authorization 头。`GET /health` 应返回 name=write-everything、protocol=2、persistent=true。与 WordTok 一样，首次配对由 Android WebView 的 `fetch` 完成；默认精确允许应用来源 `https://localhost`。其他浏览器来源默认拒绝，可通过 `ALLOWED_ORIGINS` 精确列出受信任 Origin，不要使用通配符。旧部署若显式传入空 origins，需要同步允许该来源。当前中继始终合并应用所需的 https://localhost，即使旧启动文件传入空列表也可工作；其他浏览器来源仍按显式列表限制。
 
 单实例 JSON 存储；不要让多实例同时写同一个数据文件。文件自动设为 600，目录 700。部署前备份数据；丢失数据会丢失配对。配对最多 1000 个，每配对最多 10000 条未清理回执、20 个在途请求，单请求 1 MiB。`DATA_FILE` 指向专用目录，不能入库；不要复用 WordTok 的数据文件。公开配对端点应由反向代理限制频率，适合自用单实例。
 

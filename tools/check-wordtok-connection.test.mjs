@@ -47,9 +47,9 @@ test('revocation uses WordTok fetch bearer request; unauthorized clears and tran
   assert.equal(b.calls[0].options.body,'{}');
  }
 });
-test('relay allows only the explicit WordTok app origin and supports browser preflight',async()=>{
+test('legacy launchers with empty origins still allow the required app origin and reject other sites',async()=>{
  globalThis.fetch=originalFetch;
- const relay=createRelay();await new Promise(resolve=>relay.listen(0,'127.0.0.1',resolve));
+ const relay=createRelay({origins:[]});await new Promise(resolve=>relay.listen(0,'127.0.0.1',resolve));
  const base='http://127.0.0.1:'+relay.address().port;
  try{
   const health=await originalFetch(base+'/health',{headers:{Origin:'https://localhost'}});
