@@ -31,4 +31,15 @@ class AgentConversationUiTest {
             assertTrue(active.isCancelled)
         } finally {controller.pause().stop().destroy()}
     }
+    @Test fun openingCanvasCannotStartAnotherAiRequest() {
+        val controller=Robolectric.buildActivity(AgentWorkspaceActivity::class.java).create().start().resume().visible()
+        try {
+            val activity=controller.get();val all=views(activity.window.decorView)
+            AgentWorkspaceActivity::class.java.getDeclaredField("openingPage").apply {isAccessible=true}.setBoolean(activity,true)
+            all.filterIsInstance<EditText>().single {it.contentDescription=="工作区需求"}.setText("do not send yet")
+            all.filterIsInstance<Button>().single {it.text=="发送"}.performClick()
+            assertNull(AgentWorkspaceActivity::class.java.getDeclaredField("job").apply {isAccessible=true}.get(activity))
+        } finally {controller.pause().stop().destroy()}
+    }
+
 }

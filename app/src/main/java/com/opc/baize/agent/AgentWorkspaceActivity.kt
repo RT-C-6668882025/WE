@@ -26,6 +26,7 @@ class AgentWorkspaceActivity : Activity() {
     private var runtime: AgentRuntime? = null
     private var runtimeWorkspace = ""
     private var job: Job? = null
+    private var openingPage=false
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); files = WorkspaceFiles(this)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16),dp(12),dp(16),dp(12)) }
@@ -77,6 +78,7 @@ class AgentWorkspaceActivity : Activity() {
             text="发送";isAllCaps=false;minHeight=dp(48);contentDescription="发送或停止当前任务"
             setOnClickListener {
                 if(job?.isActive==true) {job?.cancel();output.append("\n已请求停止。")}
+                else if(openingPage) info.text="正在打开画布，请稍候…"
                 else {val text=input.text.toString().trim();if(text.isNotEmpty()) run(text)}
             }
         }; root.addView(stop)
@@ -115,7 +117,7 @@ class AgentWorkspaceActivity : Activity() {
     }
     private fun resetRuntime() { runtime?.close(); runtime = null; runtimeWorkspace = "" }
     private fun run(text: String) {
-        if (job?.isActive == true) return
+        if (job?.isActive == true || openingPage) return
         val workspace = current(); controls.forEach {it.isEnabled=false};stop.text="停止"
         output.append("\n你：$text\n")
         job = scope.launch {
@@ -178,6 +180,8 @@ class AgentWorkspaceActivity : Activity() {
         }.setNegativeButton("关闭", null).show()
     }
     private fun openCanvas() {
+        if(openingPage) return
+        openingPage=true
         val workspace = current()
         scope.launch {
             try {
@@ -190,9 +194,12 @@ class AgentWorkspaceActivity : Activity() {
                     .putExtra("workspace",workspace.id).putExtra("generatedPdf",pdf.path)
                     .putExtra("sourcePath",WorkspaceDrawing.sourcePath(workspace,pdf)))
             } catch (e: Exception) { output.append("\n打开画布失败：${e.message}") }
+            finally {openingPage=false}
         }
     }
     private fun openPaper(source: java.io.File?, spacious: Boolean) {
+        if(openingPage) return
+        openingPage=true
         val workspace = current()
         controls.forEach { it.isEnabled = false }
         scope.launch {
@@ -209,7 +216,7 @@ class AgentWorkspaceActivity : Activity() {
                         ?: source?.let { "/" + it.relativeTo(workspace.root).path })
                     .putExtra("autoStudy", true))
             } catch (e: Exception) { output.append("\n打开学习页失败：${e.message}") }
-            finally { controls.forEach { it.isEnabled = true } }
+            finally {openingPage=false;controls.forEach {it.isEnabled=true}}
         }
     }
     @Deprecated("Platform callback")
