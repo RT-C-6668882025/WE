@@ -303,6 +303,7 @@ class DrawingDeviceTest {
             instrumentation.runOnMainSync {
                 val root=(activity.findViewById<android.view.ViewGroup>(android.R.id.content)).getChildAt(0) as android.view.ViewGroup
                 val density=activity.resources.displayMetrics.density
+                val errors=mutableListOf<String>()
                 for((label,size) in listOf("phone" to (320 to 568),"landscape" to (640 to 360),"tablet" to (800 to 600))) {
                     val w=(size.first*density).toInt();val h=(size.second*density).toInt()
                     repeat(3) {root.measure(android.view.View.MeasureSpec.makeMeasureSpec(w,android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(h,android.view.View.MeasureSpec.EXACTLY));root.layout(0,0,w,h)}
@@ -310,10 +311,11 @@ class DrawingDeviceTest {
                     for(name in listOf("画笔","框选","橡皮","笔刷","图层","发送")) {
                         val button=all.filterIsInstance<android.widget.Button>().single {it.contentDescription?.toString()==name || (name=="发送" && it.text=="发送")}
                         val bounds=android.graphics.Rect();button.getDrawingRect(bounds);root.offsetDescendantRectToMyCoords(button,bounds)
-                        assertTrue("$label $name outside viewport",bounds.left>=0 && bounds.right<=w && bounds.top>=0 && bounds.bottom<=h)
-                        assertTrue("$label $name touch target",button.width>=48*density)
+                        if(!(bounds.left>=0 && bounds.right<=w && bounds.top>=0 && bounds.bottom<=h)) errors.add("$label $name outside viewport: $bounds")
+                        if(button.width<48*density) errors.add("$label $name touch target: ${button.width}/$density")
                     }
-                    assertTrue("$label canvas too small",all.filterIsInstance<PaperInkView>().single().height>=h*.3f)
+                    val canvasHeight=all.filterIsInstance<PaperInkView>().single().height
+                    if(canvasHeight<h*.3f) errors.add("$label canvas too small: $canvasHeight of $h")
                     val image=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);root.draw(Canvas(image))
                     try {
                         val values=android.content.ContentValues().apply {
@@ -325,6 +327,7 @@ class DrawingDeviceTest {
                         context.contentResolver.openOutputStream(uri)!!.use {assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,it))}
                     } finally {image.recycle()}
                 }
+                assertTrue(errors.joinToString("; "),errors.isEmpty())
             }
         } finally {instrumentation.runOnMainSync {activity.finish()};workspace.container.deleteRecursively()}
     }

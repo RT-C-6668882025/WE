@@ -79,9 +79,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
           script: |
-            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.opc.baize.agent.NativeAgentDeviceTest,com.opc.baize.mcp.McpDeviceTest,com.opc.baize.paper.DrawingDeviceTest,com.opc.baize.mcp.McpWebViewDeviceTest,com.opc.baize.mcp.McpPublicRelayDeviceTest --no-daemon
-            adb pull /sdcard/Pictures/WE-CI app/build/reports/ui-checks
-            bash tools/check-persistent-session-device.sh
+            bash tools/run-android-canvas-checks.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -89,7 +89,13 @@ class PaperActivity : Activity() {
         super.onCreate(state); pendingExport=state?.getString("drawing_export"); repository = PaperRepository(applicationContext)
         workspaceId = intent.getStringExtra("workspace")
         command = prefs.getInt("paper_command", 0).coerceIn(0,3)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        var responsiveLayout:(Int)->Unit = {}
+        val root=object:LinearLayout(this@PaperActivity) {
+            override fun onMeasure(widthSpec:Int,heightSpec:Int) {
+                responsiveLayout(android.view.View.MeasureSpec.getSize(heightSpec))
+                super.onMeasure(widthSpec,heightSpec)
+            }
+        }.apply {orientation=LinearLayout.VERTICAL}
         root.setBackgroundColor(Color.rgb(246,241,228))
         setContentView(root)
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -228,8 +234,8 @@ class PaperActivity : Activity() {
                 if(state.error!=null) status.text="请重试保存后再翻页或退出。"
             }}
         }
-        root.addOnLayoutChangeListener {_,_,_,_,_,_,_,_,_ ->
-            val compact=root.height in 1 until dp(480)
+        responsiveLayout={height ->
+            val compact=height in 1 until dp(480)
             val actionVisibility=if(compact) android.view.View.GONE else android.view.View.VISIBLE
             if(actions.visibility!=actionVisibility) actions.visibility=actionVisibility
             val navigationVisibility=if(compact && pageCount<=1) android.view.View.GONE else android.view.View.VISIBLE
