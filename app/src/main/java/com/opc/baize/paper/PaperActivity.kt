@@ -116,7 +116,7 @@ class PaperActivity : Activity() {
         root.setBackgroundColor(Color.rgb(246,241,228))
         setContentView(root)
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        status = TextView(this).apply { text = "手动识别 · 双指移动与缩放 · 笔迹自动保存"; textSize = 12f; maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END; setTextColor(Color.rgb(105,96,78)); contentDescription="画布状态" }
+        status = TextView(this).apply { text = "手动识别 · 双指移动与缩放 · 笔迹自动保存"; textSize = 12f; maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END; setTextColor(Color.rgb(105,96,78)) }
         fun row() = LinearLayout(this).also { root.addView(it) }
         fun button(row: LinearLayout, text: String, call: () -> Unit) = Button(this).apply {
             this.text = text; textSize = 13f; isAllCaps = false
@@ -175,7 +175,7 @@ class PaperActivity : Activity() {
                     else -> "框选"
                 }
                 value.text=label;value.isSelected=key==ink.mode
-                value.contentDescription=when(key) {PaperInkView.Mode.WRITE->"画笔";PaperInkView.Mode.ERASE->"橡皮";else->"框选"}
+                value.contentDescription=if(android.os.Build.VERSION.SDK_INT>=30) when(key) {PaperInkView.Mode.WRITE->"画笔";PaperInkView.Mode.ERASE->"橡皮";else->"框选"} else "$label，${if(key==ink.mode) "已选中" else "未选中"}"
                 if(android.os.Build.VERSION.SDK_INT>=30) value.stateDescription=if(key==ink.mode) "已选中：$label" else "未选中"
                 value.tooltipText=if(key==PaperInkView.Mode.ERASE) "$label · 长按切换橡皮类型" else "$label · 长按打开绘画工具"
             }
@@ -552,14 +552,15 @@ class PaperActivity : Activity() {
     },setTool={chooseTool(it)})
     private fun showBrushPanel() {
         if(ink.brushEngine==DrawdanceBrush.ENGINE) {drawingPanels().brushes();return}
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24,12,24,12) }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16),dp(8),dp(16),dp(8)) }
         val colors = intArrayOf(Color.BLACK,Color.rgb(25,85,175),Color.rgb(190,40,40),Color.rgb(35,125,75))
         val color = Spinner(this).apply {
+            contentDescription="笔迹颜色";minimumHeight=dp(48)
             adapter = ArrayAdapter(this@PaperActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("黑","蓝","红","绿"))
             setSelection(colors.indexOf(ink.penColor).coerceAtLeast(0))
         }; box.addView(color)
         val label = TextView(this); box.addView(label)
-        val size = SeekBar(this).apply { max = 190; progress = (ink.penWidth*10-10).toInt().coerceIn(0,190) }; box.addView(size)
+        val size = SeekBar(this).apply { contentDescription="笔迹粗细";minimumHeight=dp(48);max = 190; progress = (ink.penWidth*10-10).toInt().coerceIn(0,190) }; box.addView(size)
         fun describe() { label.text = "粗细：${(size.progress+10)/10f}" }; describe()
         size.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?,value: Int,fromUser: Boolean) { describe() }

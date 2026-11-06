@@ -89,4 +89,32 @@ class PaperToolbarTest {
         } finally {controller.pause().stop().destroy()}
     }
 
+    @Test @Config(sdk=[26]) fun selectedShapeAndEraserAreNamedOnSupportedOldAndroid() {
+        val controller=Robolectric.buildActivity(PaperActivity::class.java).create().start().resume().visible()
+        try {
+            val activity=controller.get();val all=views(activity.window.decorView)
+            val ink=all.filterIsInstance<PaperInkView>().single()
+            ink.drawingTool="line"
+            val choose=PaperActivity::class.java.getDeclaredField("chooseTool").apply {isAccessible=true}.get(activity) as (PaperInkView.Mode)->Unit
+            choose(PaperInkView.Mode.WRITE)
+            assertTrue(all.filterIsInstance<Button>().single {it.text=="直线"}.isSelected)
+            ink.pixelEraser=true;choose(PaperInkView.Mode.ERASE)
+            assertTrue(all.filterIsInstance<Button>().single {it.text=="局部擦"}.isSelected)
+        } finally {controller.pause().stop().destroy()}
+    }
+    @Test fun aiRequestAndScopeSurviveActivityRecreation() {
+        val first=Robolectric.buildActivity(PaperActivity::class.java).create().start().resume().visible()
+        val state=android.os.Bundle()
+        val input=PaperActivity::class.java.getDeclaredField("requestField").apply {isAccessible=true}
+        val scope=PaperActivity::class.java.getDeclaredField("scopeChoice").apply {isAccessible=true}
+        (input.get(first.get()) as EditText).setText("保留我的请求")
+        (scope.get(first.get()) as Spinner).setSelection(2)
+        first.saveInstanceState(state).pause().stop().destroy()
+        val second=Robolectric.buildActivity(PaperActivity::class.java).create(state).start().resume().visible()
+        try {
+            assertEquals("保留我的请求",(input.get(second.get()) as EditText).text.toString())
+            assertEquals(2,(scope.get(second.get()) as Spinner).selectedItemPosition)
+        } finally {second.pause().stop().destroy()}
+    }
+
 }

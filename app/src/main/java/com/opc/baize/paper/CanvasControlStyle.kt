@@ -16,6 +16,7 @@ object CanvasControlStyle {
             if(focus) setStroke((2*density).toInt(),Color.rgb(105,96,78))
         }
         val fill=StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_selected,android.R.attr.state_focused),shape(Color.rgb(216,207,184),true))
             addState(intArrayOf(android.R.attr.state_selected),shape(Color.rgb(216,207,184)))
             addState(intArrayOf(android.R.attr.state_focused),shape(Color.rgb(232,224,204),true))
             addState(intArrayOf(),shape(Color.rgb(246,241,228)))

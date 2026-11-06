@@ -79,11 +79,11 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
                 contentDescription="选择图层 ${layer.name}"
                 setOnClickListener {action {ink.selectLayer(layer.id)}}
             },LinearLayout.LayoutParams(0,-2,1f))
-            row.addView(Button(activity).apply {text=if(layer.visible) "显示" else "隐藏";minWidth=0;minimumWidth=0
+            row.addView(Button(activity).apply {text=if(layer.visible) "可见" else "隐藏";minWidth=0;minimumWidth=0
                 contentDescription="切换图层 ${layer.name} 的显示状态"
                 setOnClickListener {action {ink.updateLayer(layer.copy(visible=!layer.visible))}}
             },LinearLayout.LayoutParams(68.dp(),-2))
-            row.addView(Button(activity).apply {text=if(layer.locked) "锁定" else "解锁";minWidth=0;minimumWidth=0
+            row.addView(Button(activity).apply {text=if(layer.locked) "已锁" else "未锁";minWidth=0;minimumWidth=0
                 contentDescription="切换图层 ${layer.name} 的锁定状态"
                 setOnClickListener {action {ink.updateLayer(layer.copy(locked=!layer.locked))}}
             },LinearLayout.LayoutParams(68.dp(),-2))
