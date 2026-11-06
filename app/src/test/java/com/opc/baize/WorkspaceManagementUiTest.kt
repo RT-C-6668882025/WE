@@ -49,4 +49,20 @@ class WorkspaceManagementUiTest {
             assertTrue(files.state(w).archived)
         } finally { controller.destroy(); w.container.deleteRecursively() }
     }
+    @Test fun externalWorkspaceAppearsWithoutClosingTheOpenList() {
+        val context=RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("moling",0).edit().putBoolean("firstRunDone",true).commit()
+        val controller=Robolectric.buildActivity(MainActivity::class.java).create().start().resume().visible()
+        var created:com.opc.baize.agent.WeWorkspace?=null
+        try {
+            MainActivity::class.java.getDeclaredMethod("showPanel",Int::class.javaPrimitiveType)
+                .apply {isAccessible=true}.invoke(controller.get(),0)
+            val dialog=ShadowAlertDialog.getLatestAlertDialog()
+            created=WorkspaceFiles(context).create("MCP-live-${UUID.randomUUID()}")
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertSame(dialog,ShadowAlertDialog.getLatestAlertDialog())
+            assertTrue(views(dialog.window!!.decorView).filterIsInstance<TextView>().any {it.text.toString()==created!!.name})
+        } finally {controller.pause().stop().destroy();created?.container?.deleteRecursively()}
+    }
+
 }

@@ -40,6 +40,12 @@ object DrawpileBrush {
 /** Shared by the editor snapshot and MCP so feedback uses identical ink. */
 object PaperStrokeRenderer {
     fun draw(canvas: Canvas, stroke: PaperStroke) {
+        if (stroke.operation == "polygon") {
+            if(stroke.points.size<3) return
+            val path=Path();stroke.points.forEachIndexed {i,p -> if(i==0) path.moveTo(p.x,p.y) else path.lineTo(p.x,p.y)};path.close()
+            canvas.drawPath(path,Paint(Paint.ANTI_ALIAS_FLAG).apply {color=stroke.color;alpha=(Color.alpha(stroke.color)*stroke.brush.opacity).toInt();style=Paint.Style.FILL})
+            return
+        }
         if (stroke.engine == DrawdanceBrush.ENGINE) { DrawdanceBrush.draw(canvas, stroke); return }
         if (stroke.engine == DrawpileBrush.ENGINE) { DrawpileBrush.draw(canvas, stroke); return }
         if (stroke.points.isEmpty()) return

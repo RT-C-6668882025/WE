@@ -153,4 +153,63 @@ class DrawingDeviceTest {
             bitmap.recycle()
         } }
     }
+    @Test fun solidPolygonRendersAndSeedFillStaysInsideTheBoundary() {
+        val page=CanvasEdits.apply(PaperPage(160,100,0,emptyList()),org.json.JSONArray("""[
+            {"action":"rectangle","x":20,"y":20,"x2":140,"y2":80,"filled":true,"color":"#FF0000"},
+            {"action":"fill","x":70,"y":50,"color":"#0000FF"}
+        ]"""))
+        LayerRenderer().use {renderer ->
+            val image=raster(renderer,page)
+            try {assertEquals(Color.BLUE,image.getPixel(70,50));assertEquals(0,Color.alpha(image.getPixel(5,5)))}
+            finally {image.recycle()}
+        }
+    }
+    @Test fun readyCanvasInboxSurvivesSubscriberAbsence() {
+        val context=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("MCP-inbox")
+        try {
+            val page=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+            com.opc.baize.agent.WorkspaceDrawing.announce(workspace,page.pdf)
+            assertEquals(page.pdf.canonicalPath,com.opc.baize.agent.WorkspaceDrawing.pending(workspace)?.path)
+            java.io.File(workspace.container,"ready-canvas.json").writeText("""{"path":"/../../outside.pdf"}""")
+            assertNull(com.opc.baize.agent.WorkspaceDrawing.pending(workspace))
+        } finally {workspace.container.deleteRecursively()}
+    }
+
+    @Test fun navigationWorksImmediatelyInEveryToolAndBlocksExternalEditsUntilRelease() {
+        val instrumentation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val view=PaperInkView(instrumentation.targetContext)
+            view.layout(0,0,160,100)
+            view.load(Bitmap.createBitmap(160,100,Bitmap.Config.ARGB_8888),PaperPage(160,100,0,emptyList()))
+            var clock=android.os.SystemClock.uptimeMillis()
+            fun touch(action:Int,points:List<Pair<Float,Float>>) {
+                val properties=points.indices.map {i -> android.view.MotionEvent.PointerProperties().apply {id=i;toolType=android.view.MotionEvent.TOOL_TYPE_FINGER}}.toTypedArray()
+                val coords=points.map {p -> android.view.MotionEvent.PointerCoords().apply {x=p.first;y=p.second;pressure=1f;size=1f}}.toTypedArray()
+                val event=android.view.MotionEvent.obtain(clock,clock+10,action,points.size,properties,coords,0,0,1f,1f,0,0,android.view.InputDevice.SOURCE_TOUCHSCREEN,0)
+                try {assertTrue(view.onTouchEvent(event))} finally {event.recycle()};clock+=20
+            }
+            try {
+                for(mode in PaperInkView.Mode.values()) {
+                    view.resetView();view.mode=mode
+                    val before=view.context().getJSONObject("viewport").getDouble("left")
+                    touch(android.view.MotionEvent.ACTION_DOWN,listOf(40f to 40f))
+                    touch(android.view.MotionEvent.ACTION_POINTER_DOWN or (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),listOf(40f to 40f,80f to 40f))
+                    assertFalse(view.canAcceptExternal)
+                    touch(android.view.MotionEvent.ACTION_MOVE,listOf(50f to 50f,90f to 50f))
+                    assertEquals(before+10,view.context().getJSONObject("viewport").getDouble("left"),.01)
+                    touch(android.view.MotionEvent.ACTION_POINTER_UP or (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),listOf(50f to 50f,90f to 50f))
+                    touch(android.view.MotionEvent.ACTION_UP,listOf(50f to 50f))
+                    assertTrue(view.canAcceptExternal);assertTrue(view.page.strokes.isEmpty())
+                }
+                view.resetView();view.mode=PaperInkView.Mode.ERASE;view.stylusOnly=true
+                touch(android.view.MotionEvent.ACTION_DOWN,listOf(40f to 40f))
+                touch(android.view.MotionEvent.ACTION_MOVE,listOf(60f to 50f))
+                touch(android.view.MotionEvent.ACTION_UP,listOf(60f to 50f))
+                assertEquals(20.0,view.context().getJSONObject("viewport").getDouble("left"),.01)
+                assertTrue(view.page.strokes.isEmpty())
+            } finally {view.release()}
+        }
+    }
+
 }

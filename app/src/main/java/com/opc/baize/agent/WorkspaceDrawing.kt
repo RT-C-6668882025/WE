@@ -18,6 +18,18 @@ object WorkspaceDrawing {
         return listOf("json", "md", "txt").map { File(file.parentFile,"${file.nameWithoutExtension}.$it") }
             .firstOrNull { it.isFile && it.canonicalPath.startsWith(workspace.root.canonicalPath + "/memory/pages/") }?.let { "/" + it.relativeTo(workspace.root).path }
     }
+    /** Durable inbox: a page created/edited while the app is paused is still discoverable. */
+    fun announce(workspace: WeWorkspace, pdf: File) {
+        LearningTurn.write(File(workspace.container,"ready-canvas.json"),JSONObject()
+            .put("path", "/"+pdf.relativeTo(workspace.root).invariantSeparatorsPath).toString())
+        WorkspacePageEvents.publish(workspace.id,pdf)
+        WorkspaceEvents.publish()
+    }
+    fun pending(workspace: WeWorkspace): File? = runCatching {
+        val value=JSONObject(AtomicFile(File(workspace.container,"ready-canvas.json")).openRead().bufferedReader().use {it.readText()})
+        val pdf=File(workspace.root,value.getString("path").removePrefix("/")).canonicalFile
+        pdf.takeIf {it.isFile && it.extension=="pdf" && it.path.startsWith(workspace.root.canonicalPath+"/memory/pages/")}
+    }.getOrNull()
     @Synchronized fun open(workspace: WeWorkspace,newDrawing: Boolean=false,title: String="空白页"): Document {
         val directory=File(workspace.root,"memory/pages/drawings").apply {mkdirs()}
         val pointer=AtomicFile(File(workspace.container,"active-drawing.json"))

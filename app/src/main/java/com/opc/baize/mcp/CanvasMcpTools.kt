@@ -42,7 +42,7 @@ class CanvasMcpTools(private val context: Context) {
         if(name=="create_canvas") {
             val title=a.getString("title"); require(title.isNotBlank() && title.length<=120)
             val page=WorkspaceDrawing.open(w,true,title)
-            WorkspacePageEvents.publish(w.id,page.pdf)
+            WorkspaceDrawing.announce(w,page.pdf)
             return describe(w,page.pdf).put("ready_to_open",true).put("revision",0)
         }
         if(name=="get_canvas_context" && !a.has("path")) return JSONObject().put("active",CanvasSession.context(w.id) ?: JSONObject.NULL)
@@ -56,7 +56,22 @@ class CanvasMcpTools(private val context: Context) {
                     .put("revision",page.revision).put("width",page.width).put("height",page.height)
                     .put("layers",JSONObject(page.encode()).getJSONArray("layers")).put("active_layer",page.activeLayerId).put("stroke_count",page.strokes.size)
                 when(name) {
-                    "get_canvas_context" -> metadata(saved()).put("active",CanvasSession.context(w.id) ?: JSONObject.NULL)
+                    "get_canvas_context" -> {
+                        val data=saved();val offset=a.optInt("stroke_offset",0);require(offset>=0)
+                        val objects=data.strokes.drop(offset).take(100).mapIndexed { j,stroke ->
+                            JSONObject().put("index",offset+j).put("layer_id",stroke.layerId).put("operation",stroke.operation)
+                                .put("color",String.format("#%08X",stroke.color)).put("width",stroke.width)
+                                .put("point_count",stroke.points.size).put("brush",stroke.brush.encode())
+                                .put("bounds",if(stroke.points.isEmpty()) JSONObject.NULL else JSONArray(listOf(
+                                    stroke.points.minOf {it.x},stroke.points.minOf {it.y},stroke.points.maxOf {it.x},stroke.points.maxOf {it.y})))
+                        }
+                        metadata(data).put("active",CanvasSession.context(w.id) ?: JSONObject.NULL)
+                            .put("objects",JSONArray(objects)).put("next_stroke_offset",if(offset+100<data.strokes.size) offset+100 else JSONObject.NULL)
+                            .put("capabilities",JSONObject().put("actions",JSONArray(listOf("stroke","erase","line","rectangle","ellipse","polygon","bezier","fill",
+                                "add_layer","update_layer","select_layer","delete_layer","reorder_layer","duplicate_layer","clear_layer","transform","delete_strokes","restyle")))
+                                .put("blend_modes",JSONArray(PaperLayer.blends)).put("max_layers",32)
+                                .put("brush_presets",JSONArray(BrushSettings.presets.mapIndexed { j,b -> JSONObject().put("name",BrushSettings.names[j]).put("brush",b.encode()) })))
+                    }
                     "edit_canvas", "canvas_history" -> {
                         val expected=a.getLong("expected_revision");require(expected>=0)
                         val change:(PaperPage)->PaperPage={ current ->
@@ -68,6 +83,7 @@ class CanvasMcpTools(private val context: Context) {
                             }
                         }
                         val updated=CanvasSession.change(w.id,id,index,expected,change) {change(saved())}
+                        WorkspaceDrawing.announce(w,pdf)
                         metadata(updated).put("saved",true)
                     }
                     "export_canvas" -> {

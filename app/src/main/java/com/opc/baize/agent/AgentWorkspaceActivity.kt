@@ -219,6 +219,18 @@ class AgentWorkspaceActivity : Activity() {
             finally { controls.forEach { it.isEnabled = true } }
         }
     }
+    private val indexChanged: () -> Unit = { runOnUiThread {
+        if (!isFinishing && job?.isActive != true && ::choice.isInitialized) {
+            val selected = workspaces.getOrNull(choice.selectedItemPosition)?.id
+            if (files.list() != workspaces) reload(selected)
+        }
+    } }
+    override fun onResume() {
+        super.onResume()
+        WorkspaceEvents.subscribe(indexChanged)
+        indexChanged()
+    }
+    override fun onPause() { WorkspaceEvents.unsubscribe(indexChanged); super.onPause() }
     override fun onDestroy() { scope.cancel(); resetRuntime(); super.onDestroy() }
     companion object { private const val IMPORT_SKILL = 704 }
 }

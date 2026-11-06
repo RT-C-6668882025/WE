@@ -19,3 +19,7 @@ sudo bash tools/deploy-we-drawing-relay.sh
 脚本备份旧启动文件和配对数据，将中继代码与同一份工具清单放入按提交分隔的版本目录，保留数据路径与允许来源，仅重启 WE 服务。检查本机健康、`https://localhost` 来源响应头，以及现有配对的十六个工具名称；不输出配对凭据、不重新配对，不改 nginx、证书或其他服务。验收失败仅回滚启动脚本，不回滚运行期间可能更新过的配对数据。
 
 服务器完成后仍需用原有配对的外部 Agent 验收：列出十六个工具 → 列出画布 → 读取 revision → 编辑 → 在 App 中看到结果 → 导出收到图片。旧版本 App 不认识新工具，须同时升级设备端。
+
+## 对象编辑扩展
+
+新增操作复用 edit_canvas，工具数量仍为十六个。get_canvas_context 新增对象摘要、能力和笔刷清单，edit_canvas 新增 polygon/bezier/restyle、filled/bounds 与填色种子。设备端与中继需同时升级；旧中继的 schema 无法暴露新增参数。完整实现边界见 drawing-capabilities.md。

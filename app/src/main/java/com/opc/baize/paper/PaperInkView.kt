@@ -62,7 +62,7 @@ class PaperInkView(context: Context) : View(context) {
     fun resetView() { zoom = 1f; dx = 0f; dy = 0f; invalidate() }
     fun zoom(factor: Float) { zoom = (zoom * factor).coerceIn(1f, 5f); invalidate() }
     var historyRequest: ((Boolean)->Unit)? = null
-    val canAcceptExternal: Boolean get() = activePointer == -1 && current.isEmpty() && eraseBefore == null && !selecting
+    val canAcceptExternal: Boolean get() = activePointer == -1 && current.isEmpty() && eraseBefore == null && !selecting && !gestureSequence
     fun acceptExternal(data: PaperPage) {
         require(canAcceptExternal); cancelInteraction(); page=data; history.clear(); future.clear(); invalidate()
     }
@@ -235,7 +235,14 @@ class PaperInkView(context: Context) : View(context) {
         val tool = e.getToolType(pointer)
         // Finger navigation remains available even with pen-only writing enabled.
         if (stylusOnly && tool == MotionEvent.TOOL_TYPE_FINGER && mode != Mode.MOVE) {
-            if (e.actionMasked == MotionEvent.ACTION_UP) { activePointer = -1; parent?.requestDisallowInterceptTouchEvent(false) }
+            when(e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { lastX=e.getX(pointer);lastY=e.getY(pointer);strokeStarted?.invoke() }
+                MotionEvent.ACTION_MOVE -> {
+                    dx+=e.getX(pointer)-lastX;dy+=e.getY(pointer)-lastY
+                    lastX=e.getX(pointer);lastY=e.getY(pointer);invalidate()
+                }
+                MotionEvent.ACTION_UP -> { activePointer = -1; parent?.requestDisallowInterceptTouchEvent(false) }
+            }
             return true
         }
         val action = when (e.actionMasked) {
@@ -245,7 +252,7 @@ class PaperInkView(context: Context) : View(context) {
         }
         val viewX = e.getX(pointer); val viewY = e.getY(pointer)
         val t = transform()
-        if (action == MotionEvent.ACTION_DOWN && (t.pageX(viewX) !in 0f..page.width.toFloat() || t.pageY(viewY) !in 0f..page.height.toFloat())) {
+        if (action == MotionEvent.ACTION_DOWN && mode != Mode.MOVE && (t.pageX(viewX) !in 0f..page.width.toFloat() || t.pageY(viewY) !in 0f..page.height.toFloat())) {
             activePointer = -1; return true
         }
         val x = t.pageX(viewX).coerceIn(0f, page.width.toFloat()); val y = t.pageY(viewY).coerceIn(0f, page.height.toFloat())

@@ -1500,6 +1500,16 @@ class MainActivity : Activity() {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { prefs.edit().putInt("workspace_sort", position).apply(); render() }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
+        val indexChanged: () -> Unit = { rows.post { if (rows.isAttachedToWindow) render() }; Unit }
+        rows.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                com.opc.baize.agent.WorkspaceEvents.subscribe(indexChanged)
+                render()
+            }
+            override fun onViewDetachedFromWindow(v: View) {
+                com.opc.baize.agent.WorkspaceEvents.unsubscribe(indexChanged)
+            }
+        })
         render()
         return scrollPane(col)
     }
