@@ -174,6 +174,7 @@ class MainActivity : Activity() {
             Session(savedSession!!, it.container.lastModified(), emptyList())
         })?.let { resumeSessionState(it) }
         homeTab=savedInstanceState?.getInt("home_tab",0) ?: 0
+        workspaceFiltersExpanded=savedInstanceState?.getBoolean("workspace_filters",false) ?: false
         workspaceScope=savedInstanceState?.getString("workspace_scope") ?: "active"
         workspaceSearch=savedInstanceState?.getString("workspace_search") ?: ""
         buildUi()
@@ -312,13 +313,14 @@ class MainActivity : Activity() {
         }
         homeTab=tab.coerceIn(0,2)
         if(!::homeBody.isInitialized) return
+        homeBody.isFocusableInTouchMode=true;homeBody.requestFocus()
         homeBody.removeAllViews()
         val pane=when(homeTab) {TAB_SETTINGS->buildSettingsPane();TAB_ABOUT->buildAboutPane();else->buildWorkspacePane()}
         WeUi.style(pane);homeBody.addView(pane,FrameLayout.LayoutParams(-1,-1))
         homeTabs.forEachIndexed {index,button->button.isSelected=index==homeTab}
     }
     override fun onSaveInstanceState(state:Bundle) {
-        state.putInt("home_tab",homeTab);state.putString("workspace_scope",workspaceScope);state.putString("workspace_search",workspaceSearch)
+        state.putBoolean("workspace_filters",workspaceFiltersExpanded);state.putInt("home_tab",homeTab);state.putString("workspace_scope",workspaceScope);state.putString("workspace_search",workspaceSearch)
         super.onSaveInstanceState(state)
     }
     @Deprecated("Platform back callback")
@@ -1268,7 +1270,7 @@ class MainActivity : Activity() {
 
         val appearance=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;visibility=View.GONE}
         appearanceViews.forEach {appearance.addView(it)}
-        col.addView(WeUi.button(this,"阅读与旧版手写选项 ▾") {appearance.visibility=if(appearance.visibility==View.GONE) View.VISIBLE else View.GONE})
+        col.addView(WeUi.disclosure(this,"阅读与旧版手写选项",appearance))
         col.addView(appearance)
         // (c) 手写识别降级通道（可选）：无 Google 服务的设备（华为等）本机识别不可用，
         //     可自建 server.py 识别服务并在此填地址；留空 = 只用本机 ML Kit。
@@ -1336,6 +1338,7 @@ class MainActivity : Activity() {
 
     // ---------- 面板【工作区】 ----------
 
+    private var workspaceFiltersExpanded=false
     private var workspaceScope = "active"
     private var workspaceSearch = ""
     private var workspaceManaging = false
@@ -1349,7 +1352,12 @@ class MainActivity : Activity() {
         }
         val files = WorkspaceFiles(this)
         allSessions.forEach { files.forSession(it) }
-        val toolbar = LinearLayout(this)
+        val filterPane=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL
+            visibility=if(workspaceFiltersExpanded || workspaceSearch.isNotBlank() || workspaceScope!="active") View.VISIBLE else View.GONE
+        }
+        val filterButton=WeUi.disclosure(this,"筛选",filterPane).apply {contentDescription="筛选与搜索"}
+        val toolbar = LinearLayout(this).apply {gravity=Gravity.CENTER_VERTICAL}
         toolbar.addView(android.widget.Button(this).apply {
             text = "＋ 新工作区";tag=WeUi.PRIMARY
             setOnClickListener {
@@ -1361,7 +1369,14 @@ class MainActivity : Activity() {
                 book.resetBook(Texts.INTRO_TEXT); setStatus("idle"); panelDialog?.dismiss()
                 openWorkspaceCanvas(created)
             }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
+        }, LinearLayout.LayoutParams(-2,-2))
+        toolbar.addView(View(this),LinearLayout.LayoutParams(0,1,1f))
+        filterButton.setOnClickListener {
+            workspaceFiltersExpanded=filterPane.visibility!=View.VISIBLE
+            filterPane.visibility=if(workspaceFiltersExpanded) View.VISIBLE else View.GONE
+            filterButton.isSelected=workspaceFiltersExpanded;filterButton.text=if(workspaceFiltersExpanded) "筛选 ▴" else "筛选 ▾"
+        }
+        toolbar.addView(filterButton)
         toolbar.addView(android.widget.Button(this).apply {
             text = if (workspaceManaging) "完成管理" else "管理"
             setOnClickListener { workspaceManaging = !workspaceManaging; selectedWorkspaces.clear(); refreshWorkspaceList() }
@@ -1375,17 +1390,17 @@ class MainActivity : Activity() {
                 setOnClickListener { workspaceScope = key; selectedWorkspaces.clear(); refreshWorkspaceList() }
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        col.addView(filters)
+        filterPane.addView(filters)
         val search = android.widget.EditText(this).apply {
             hint = "搜索工作区名称"; isSingleLine = true; setText(workspaceSearch)
             contentDescription = "搜索工作区名称"
-        }; col.addView(search)
+        }; filterPane.addView(search)
         val sort = android.widget.Spinner(this).apply {
             contentDescription="工作区排序"
             adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
                 listOf("最近使用 · 置顶优先", "名称 · 置顶优先", "最早使用 · 置顶优先"))
             setSelection(prefs.getInt("workspace_sort", 0).coerceIn(0, 2))
-        }; col.addView(sort)
+        }; filterPane.addView(sort);col.addView(filterPane)
         val count = TextView(this).apply { textSize = 13f; setTextColor(inkGray) }; col.addView(count)
         val batch = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; col.addView(batch)
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; col.addView(rows)
@@ -1394,7 +1409,7 @@ class MainActivity : Activity() {
             val order = listOf("recent", "name", "oldest")[sort.selectedItemPosition.coerceIn(0, 2)]
             val workspaces = files.query(workspaceScope, workspaceSearch, order)
             selectedWorkspaces.retainAll(workspaces.map { it.id }.toSet())
-            count.text = "${workspaces.size} 个工作区" + if (workspaceManaging) " · 已选 ${selectedWorkspaces.size} 个" else ""
+            count.text = "${when(workspaceScope) {"archived"->"已归档";"trash"->"回收站";else->"进行中"}} · ${workspaces.size} 个工作区" + if (workspaceManaging) " · 已选 ${selectedWorkspaces.size} 个" else ""
             if (workspaceManaging) {
                 val select = android.widget.Button(this).apply {
                     text = if (selectedWorkspaces.size == workspaces.size && workspaces.isNotEmpty()) "取消全选" else "全选当前列表"

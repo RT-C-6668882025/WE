@@ -21,6 +21,8 @@ class AppUiDeviceTest {
     @Test fun nativeSurfacesFitPhoneLandscapeTabletAndLargeSystemFont() {
         val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
         context.getSharedPreferences("moling",0).edit().putBoolean("firstRunDone",true).commit()
+        val sample=com.opc.baize.agent.WorkspaceFiles(context).create("界面验收工作区")
+        com.opc.baize.agent.WorkspaceFiles(context).manage(sample,"pin")
         val oldScale=android.provider.Settings.System.getFloat(context.contentResolver,"font_scale",1f)
         fun scale(value:Float) {
             ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("settings put system font_scale $value")).use {it.readBytes()}
@@ -61,6 +63,11 @@ class AppUiDeviceTest {
                                     assertTrue("$name/$label/$font $text outside $rect",rect.left>=0 && rect.top>=0 && rect.right<=w && rect.bottom<=h)
                                     assertTrue("$name/$label/$font $text touch target",button.width>=48*density && button.height>=48*density)
                                 }
+                                if(name=="home") {
+                                    val title=views(root).filterIsInstance<android.widget.TextView>().first {it.text.toString().contains(sample.name)}
+                                    val visible=Rect()
+                                    assertTrue("Home hides workspace rows at $label/$font",title.getLocalVisibleRect(visible) && visible.height()>=title.lineHeight)
+                                }
                                 val image=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);root.draw(Canvas(image))
                                 try {
                                     val values=android.content.ContentValues().apply {
@@ -76,7 +83,7 @@ class AppUiDeviceTest {
                     } finally {instrumentation.runOnMainSync {activity.finish()}}
                 }
             }
-        } finally {scale(oldScale)}
+        } finally {scale(oldScale);sample.container.deleteRecursively()}
     }
     @Test fun connectionScreenHasBackNavigationAndAccessibleWebActions() {
         val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext

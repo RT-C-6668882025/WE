@@ -20,6 +20,14 @@ object WeUi {
     fun button(context:Context,label:String,call:()->Unit)=Button(context).apply {
         text=label;contentDescription=label;setOnClickListener {call()};style(this)
     }
+    fun disclosure(context:Context,title:String,content:View)=button(context,title) {}.apply {
+        fun update() {
+            val expanded=content.visibility==View.VISIBLE
+            text=title+if(expanded) " ▴" else " ▾";isSelected=expanded
+            contentDescription=(if(expanded) "收起" else "展开")+title
+        }
+        update();setOnClickListener {content.visibility=if(content.visibility==View.GONE) View.VISIBLE else View.GONE;update()}
+    }
     fun header(activity:Activity,title:String,back:(()->Unit)?={activity.finish()}):LinearLayout = LinearLayout(activity).apply {
         gravity=Gravity.CENTER_VERTICAL;minimumHeight=dp(activity,56)
         if(back!=null) addView(button(activity,"返回",back),LinearLayout.LayoutParams(-2,dp(activity,48)))
