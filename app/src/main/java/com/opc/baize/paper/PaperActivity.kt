@@ -130,6 +130,8 @@ class PaperActivity : Activity() {
             text = workspaceName; textSize = 17f; setTextColor(Color.rgb(58,53,44))
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         },LinearLayout.LayoutParams(0,-2,1f))
+        val compactUndo=button(top,"撤销") {if(canEditCanvas()) ink.undo()}.apply {visibility=android.view.View.GONE}
+        val compactRedo=button(top,"重做") {if(canEditCanvas()) ink.redo()}.apply {visibility=android.view.View.GONE}
         button(top,"页面") { showWorkspacePages() }
         button(top,"菜单") { showCanvasMenu() }
         val navigation = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
@@ -236,6 +238,8 @@ class PaperActivity : Activity() {
         }
         responsiveLayout={height ->
             val compact=height in 1 until dp(480)
+            compactUndo.visibility=if(compact) android.view.View.VISIBLE else android.view.View.GONE
+            compactRedo.visibility=compactUndo.visibility
             val actionVisibility=if(compact) android.view.View.GONE else android.view.View.VISIBLE
             if(actions.visibility!=actionVisibility) actions.visibility=actionVisibility
             val navigationVisibility=if(compact && pageCount<=1) android.view.View.GONE else android.view.View.VISIBLE
@@ -604,7 +608,7 @@ class PaperActivity : Activity() {
 
     private fun showCanvasMenu() {
         AlertDialog.Builder(this).setTitle("画布菜单")
-            .setItems(arrayOf("居中显示","修改生成内容","画布设置","导出图片","工作区对话","AI 模型设置","操作说明","笔刷预设")) { _,which ->
+            .setItems(arrayOf("居中显示","修改生成内容","画布设置","导出图片","工作区对话","AI 模型设置","操作说明","笔刷预设","绘画工具","添加内容")) { _,which ->
                 when(which) {
                     0 -> ink.resetView()
                     1 -> editGeneratedContent()
@@ -619,6 +623,8 @@ class PaperActivity : Activity() {
                     4 -> workspaceId?.let { startActivity(Intent(this,AgentWorkspaceActivity::class.java).putExtra("workspace",it)) }
                     5 -> startActivity(Intent(this,com.opc.baize.MainActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openSettings",true))
+                    8 -> if(canEditCanvas()) drawingPanels().tools()
+                    9 -> if(canEditCanvas()) drawingPanels().addObjects()
                     7 -> AlertDialog.Builder(this).setTitle("笔刷预设").setItems(arrayOf("手写笔","绘画笔")) {_,index -> setInputMode(index==1)}.show()
                     6 -> AlertDialog.Builder(this).setTitle("操作说明").setMessage("一个工作区保存手写、绘画、PDF 和 AI 生成页。\n手写笔／绘画笔只切换笔刷预设，当前页面和笔迹保留。\n双指拖动与缩放；菜单中可居中显示。常用工具固定显示，更多工具从“更多”打开。\n页面入口可新建、导入和切换；笔迹自动保存。\n框选后发送会使用选区；再次点击框选取消。\nAI 按钮展开范围、指令与自动识别；默认手动发送。运行中“发送”切换为“停止”。\n新生成页通过底部入口打开，保留当前笔迹。")
                         .setPositiveButton("关闭",null).show()

@@ -308,8 +308,9 @@ class DrawingDeviceTest {
                     val w=(size.first*density).toInt();val h=(size.second*density).toInt()
                     repeat(3) {root.measure(android.view.View.MeasureSpec.makeMeasureSpec(w,android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(h,android.view.View.MeasureSpec.EXACTLY));root.layout(0,0,w,h)}
                     val all=views(root)
-                    for(name in listOf("画笔","框选","橡皮","笔刷","图层","发送")) {
-                        val button=all.filterIsInstance<android.widget.Button>().single {it.contentDescription?.toString()==name || (name=="发送" && it.text=="发送")}
+                    val required=listOf("画笔","框选","橡皮","笔刷","图层","发送")+if(label=="landscape") listOf("撤销","重做") else emptyList()
+                    for(name in required) {
+                        val button=all.filterIsInstance<android.widget.Button>().filter {it.isShown}.single {it.contentDescription?.toString()==name || (name=="发送" && it.text=="发送")}
                         val bounds=android.graphics.Rect();button.getDrawingRect(bounds);root.offsetDescendantRectToMyCoords(button,bounds)
                         if(!(bounds.left>=0 && bounds.right<=w && bounds.top>=0 && bounds.bottom<=h)) errors.add("$label $name outside viewport: $bounds")
                         if(button.width<48*density) errors.add("$label $name touch target: ${button.width}/$density")

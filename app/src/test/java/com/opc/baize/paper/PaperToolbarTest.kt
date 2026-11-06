@@ -76,4 +76,15 @@ class PaperToolbarTest {
         } finally {controller.pause().stop().destroy()}
     }
 
+    @Test fun canvasMenuRetainsToolsAndAddEntryWhenSecondaryBarCollapses() {
+        val controller=Robolectric.buildActivity(PaperActivity::class.java).create().start().resume().visible()
+        try {
+            PaperActivity::class.java.getDeclaredMethod("showCanvasMenu").apply {isAccessible=true}.invoke(controller.get())
+            val dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+            val labels=(0 until dialog.listView.adapter.count).map {dialog.listView.adapter.getItem(it).toString()}
+            assertTrue(labels.contains("绘画工具"));assertTrue(labels.contains("添加内容"));assertTrue(labels.contains("笔刷预设"))
+            dialog.dismiss()
+        } finally {controller.pause().stop().destroy()}
+    }
+
 }
