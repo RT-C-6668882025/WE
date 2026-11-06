@@ -65,7 +65,7 @@ class DrawingInteractionTest {
             dialog.dismiss()
         } finally {view.release();controller.pause().stop().destroy()}
     }
-    @Test fun collapsedLandscapeActionsRemainAvailableInMoreTools() {
+    @Test fun toolPanelSelectsShapeAndReturnsToTheCanvas() {
         val controller=Robolectric.buildActivity(Activity::class.java).create().start().resume().visible()
         val view=PaperInkView(controller.get());view.load(Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888),PaperPage(100,100,0,emptyList()))
         try {
@@ -73,9 +73,9 @@ class DrawingInteractionTest {
             DrawingPanels(controller.get(),view,{}).tools()
             val dialog=ShadowAlertDialog.getLatestAlertDialog();val list=dialog.listView
             val labels=(0 until list.adapter.count).map {list.adapter.getItem(it).toString()}
-            assertTrue(labels.contains("重做"));assertTrue(labels.contains("撤销"))
-            val index=labels.indexOf("撤销");list.performItemClick(null,index,index.toLong())
-            assertTrue(view.page.strokes.isEmpty())
+            assertFalse(labels.contains("重做"));assertFalse(labels.contains("撤销"))
+            val index=labels.indexOf("直线");list.performItemClick(null,index,index.toLong())
+            assertEquals("line",view.drawingTool)
         } finally {view.release();controller.pause().stop().destroy()}
     }
 

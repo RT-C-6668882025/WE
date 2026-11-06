@@ -13,11 +13,11 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
     }
     private fun spinner(box: LinearLayout,label: String,items: List<String>,selected: Int): Spinner {
         box.addView(TextView(activity).apply {text=label})
-        return Spinner(activity).apply {adapter=ArrayAdapter(activity,android.R.layout.simple_spinner_dropdown_item,items);setSelection(selected.coerceAtLeast(0));box.addView(this)}
+        return Spinner(activity).apply {adapter=ArrayAdapter(activity,android.R.layout.simple_spinner_dropdown_item,items);setSelection(selected.coerceAtLeast(0));contentDescription=label;minimumHeight=48.dp();box.addView(this)}
     }
     private fun slider(box: LinearLayout,name: String,value: Float): SeekBar {
         val label=TextView(activity);box.addView(label)
-        return SeekBar(activity).apply {max=100;progress=(value*100).toInt();box.addView(this)
+        return SeekBar(activity).apply {contentDescription=name;minimumHeight=48.dp();max=100;progress=(value*100).toInt();box.addView(this)
             fun update() {label.text="$name：$progress%"};update()
             setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(b:SeekBar?,v:Int,u:Boolean){update()}
@@ -34,10 +34,13 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
         val smudge=slider(box,"混色／涂抹",brush.smudge);val spacing=slider(box,"间距",brush.spacing)
         val size=EditText(activity).apply {hint="粗细（0.1–500）";setText(ink.penWidth.toString());inputType=8194};box.addView(size)
         val color=EditText(activity).apply {hint="#RRGGBB 或 #AARRGGBB";setText(String.format("#%08X",ink.penColor));maxLines=1};box.addView(color)
-        val swatches=LinearLayout(activity);box.addView(swatches)
-        listOf(Color.BLACK,Color.WHITE,0xff1955af.toInt(),0xffbe2828.toInt(),0xff237d4b.toInt(),0xffffb000.toInt()).forEach { c ->
-            swatches.addView(Button(activity).apply {text="●";setTextColor(c);contentDescription=String.format("颜色 #%08X",c)
-                setOnClickListener {color.setText(String.format("#%08X",c))}},LinearLayout.LayoutParams(0,-2,1f))
+        listOf(Color.BLACK,Color.WHITE,0xff1955af.toInt(),0xffbe2828.toInt(),0xff237d4b.toInt(),0xffffb000.toInt()).chunked(3).forEach { colors ->
+            val swatches=LinearLayout(activity);box.addView(swatches)
+            colors.forEach {c->swatches.addView(Button(activity).apply {
+                text="●";setTextColor(c);contentDescription=String.format("颜色 #%08X",c)
+                minHeight=48.dp();minimumHeight=48.dp();minWidth=48.dp();minimumWidth=48.dp()
+                setOnClickListener {color.setText(String.format("#%08X",c))}
+            },LinearLayout.LayoutParams(0,48.dp(),1f))}
         }
         val pressure=Switch(activity).apply {text="压感控制粗细";isChecked=brush.pressure};box.addView(pressure)
         val mypaint=Switch(activity).apply {text="MyPaint 引擎";isChecked=brush.mypaint};box.addView(mypaint)
@@ -130,17 +133,15 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
         }.setNegativeButton("取消",null).show()
     }
     fun tools() {
-        val labels=arrayOf("自由画笔","直线","矩形","椭圆","填充当前图层","吸管取色","局部橡皮","整笔橡皮","重做","移动／复制／删除选区","添加文字","导入图片","添加矢量图","编辑文字／矢量对象","撤销")
+        val labels=arrayOf("自由画笔","直线","矩形","椭圆","填充当前图层","吸管取色","局部橡皮","整笔橡皮","移动／复制／删除选区","添加文字","导入图片","添加矢量图","编辑文字／矢量对象")
         AlertDialog.Builder(activity).setTitle("绘画工具").setItems(labels) {_,i ->
             if(i<=5) {ink.drawingTool=listOf("freehand","line","rectangle","ellipse","fill","eyedropper")[i];ink.brushEngine=DrawdanceBrush.ENGINE;write()}
             if(i==6 || i==7) {ink.pixelEraser=i==6;setTool(PaperInkView.Mode.ERASE)}
-            if(i==8) ink.redo()
-            if(i==9) selection()
-            if(i==10) artwork("text")
-            if(i==11) importImage()
-            if(i==12) artwork("svg")
-            if(i==13) editObjects()
-            if(i==14) ink.undo()
+            if(i==8) selection()
+            if(i==9) artwork("text")
+            if(i==10) importImage()
+            if(i==11) artwork("svg")
+            if(i==12) editObjects()
         }.setNegativeButton("关闭",null).show()
     }
     private fun artwork(type:String,index:Int?=null) {

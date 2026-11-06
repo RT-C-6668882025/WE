@@ -304,7 +304,7 @@ class DrawingDeviceTest {
                 val root=(activity.findViewById<android.view.ViewGroup>(android.R.id.content)).getChildAt(0) as android.view.ViewGroup
                 val density=activity.resources.displayMetrics.density
                 val errors=mutableListOf<String>()
-                for((label,size) in listOf("phone" to (320 to 568),"landscape" to (640 to 360),"tablet" to (800 to 600))) {
+                for((label,size) in listOf("phone" to (320 to 568),"landscape" to (640 to 360),"tablet" to (800 to 600),"keyboard" to (320 to 300))) {
                     val w=(size.first*density).toInt();val h=(size.second*density).toInt()
                     repeat(3) {root.measure(android.view.View.MeasureSpec.makeMeasureSpec(w,android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(h,android.view.View.MeasureSpec.EXACTLY));root.layout(0,0,w,h)}
                     val all=views(root)
@@ -313,10 +313,11 @@ class DrawingDeviceTest {
                         val button=all.filterIsInstance<android.widget.Button>().filter {it.isShown}.single {it.contentDescription?.toString()==name || (name=="发送" && it.text=="发送")}
                         val bounds=android.graphics.Rect();button.getDrawingRect(bounds);root.offsetDescendantRectToMyCoords(button,bounds)
                         if(!(bounds.left>=0 && bounds.right<=w && bounds.top>=0 && bounds.bottom<=h)) errors.add("$label $name outside viewport: $bounds")
+                        if(button.height<48*density) errors.add("$label $name touch height: ${button.height}/$density")
                         if(button.width<48*density) errors.add("$label $name touch target: ${button.width}/$density")
                     }
                     val canvasHeight=all.filterIsInstance<PaperInkView>().single().height
-                    if(canvasHeight<h*.3f) errors.add("$label canvas too small: $canvasHeight of $h")
+                    if(canvasHeight<h*(if(label=="keyboard") .35f else .60f)) errors.add("$label canvas too small: $canvasHeight of $h")
                     val image=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);root.draw(Canvas(image))
                     try {
                         val values=android.content.ContentValues().apply {
