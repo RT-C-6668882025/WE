@@ -45,10 +45,10 @@ class AgentWorkspaceActivity : Activity() {
             val name = EditText(this).apply { hint = "工作区名称" }
             AlertDialog.Builder(this).setTitle("新建工作区").setView(name).setNegativeButton("取消", null)
                 .setPositiveButton("创建",null).create().apply {
-                    setOnShowListener {getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    show();getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         try {val created=files.create(name.text.toString());reload(created.id);dismiss()}
                         catch(e:Exception) {name.error=e.message ?: "请检查名称"}
-                    }};show()
+                    }
                 }
         }
         info = TextView(this).apply { textSize = 12f;setTextColor(WeUi.secondary);maxLines=2;accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE };root.addView(info)
@@ -73,10 +73,10 @@ class AgentWorkspaceActivity : Activity() {
             AlertDialog.Builder(this).setTitle("公开 MCP（Streamable HTTP）")
                 .setMessage("填写 JSON 数组，例如 [{\"id\":\"wiki\",\"url\":\"https://mcp.deepwiki.com/mcp\"}]。当前支持无需认证的 HTTPS 服务。")
                 .setView(editor).setNegativeButton("取消",null).setPositiveButton("保存",null).create().apply {
-                    setOnShowListener {getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    show();getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         try {files.saveMcp(workspace,editor.text.toString());resetRuntime();showInfo();dismiss()}
                         catch(e:Exception) {editor.error=e.message ?: "请检查配置格式"}
-                    }};show()
+                    }
                 }
         }
         button(settings, "查看工作区文件 / 打开手写页") { showFiles() }

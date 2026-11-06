@@ -37,7 +37,8 @@ object WeUi {
         if(message!=null) builder.setMessage(message)
         if(reset!=null) builder.setNeutralButton("恢复默认",null)
         val dialog=builder.create()
-        dialog.setOnShowListener {
+        dialog.show()
+        run {
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 try {save(editor.text.toString());dialog.dismiss()} catch(e:Exception) {editor.error=e.message ?: "输入未保存，请检查后重试"}
             }
@@ -45,7 +46,6 @@ object WeUi {
                 try {reset();dialog.dismiss()} catch(e:Exception) {editor.error=e.message ?: "恢复失败，请重试"}
             }
         }
-        dialog.show()
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
     fun style(view:View) {

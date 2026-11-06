@@ -37,12 +37,17 @@ class AppUiDeviceTest {
                 scale(font)
                 for((name,cls,required) in listOf(
                     Triple("home",MainActivity::class.java,listOf("画布","对话","工作区","设置","关于")),
+                    Triple("settings",MainActivity::class.java,listOf("画布","对话","工作区","设置","关于")),
+                    Triple("about",MainActivity::class.java,listOf("画布","对话","工作区","设置","关于")),
                     Triple("conversation",AgentWorkspaceActivity::class.java,listOf("返回","画布","设置","发送")),
                     Triple("models",SubscriptionSettingsActivity::class.java,listOf("返回"))
                 )) {
-                    val activity=instrumentation.startActivitySync(Intent(context,cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as Activity
+                    val activity=instrumentation.startActivitySync(Intent(context,cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("openSettings",name=="settings")) as Activity
                     try {
                         instrumentation.waitForIdleSync()
+                        if(name=="about") instrumentation.runOnMainSync {
+                            views(activity.window.decorView).filterIsInstance<Button>().single {it.text=="关于"}.performClick()
+                        }
                         instrumentation.runOnMainSync {
                             assertEquals(font,activity.resources.configuration.fontScale,.05f)
                             val root=(activity.findViewById<ViewGroup>(android.R.id.content)).getChildAt(0) as ViewGroup

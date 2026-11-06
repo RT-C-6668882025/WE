@@ -1555,10 +1555,10 @@ class MainActivity : Activity() {
                         val editor = android.widget.EditText(this).apply { setText(workspace.name) }
                         AlertDialog.Builder(this).setTitle("工作区名称").setView(editor).setNegativeButton("取消",null)
                             .setPositiveButton("保存",null).create().apply {
-                                setOnShowListener {getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                                show();getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                                     try {WorkspaceFiles(this@MainActivity).rename(workspace,editor.text.toString());dismiss();refreshWorkspaceList()}
                                     catch(e:Exception) {editor.error=e.message ?: "请检查名称"}
-                                }};show()
+                                }
                             }
                     }
                 }
@@ -1656,8 +1656,8 @@ class MainActivity : Activity() {
         para("· 手写识别：Google ML Kit Digital Ink Recognition")
         para("· 界面框架：AndroidX")
         para("· Android Agent Runtime：NoHarry/android-agent-runtime（MIT）")
-        para("· 本应用手写功能针对华为墨水屏进行优化，仅调用设备既有系统能力，非华为设备手写屏" +
-            "自动调用纯自绘 + 运动预测算法，可能略有延时")
+        para("· 绘画引擎：Drawpile / Drawdance")
+        para("· 矢量内容：AndroidSVG；图片方向：AndroidX ExifInterface")
         WeUi.style(col)
         return scrollPane(col)
     }
