@@ -1461,7 +1461,8 @@ class MainActivity : Activity() {
             val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, pxOf(12f), 0, pxOf(12f)) }
             info.addView(TextView(this).apply {
                 text = (if (state.pinned) "置顶 · " else "") + workspace.name + if (session?.id == curSessionId) " · 当前" else ""
-                textSize = 17f; setTextColor(inkDark); setPadding(0, pxOf(16f), 0, pxOf(16f))
+                textSize=16f;setTextColor(inkDark);maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END
+                setPadding(0,pxOf(6f),pxOf(8f),pxOf(6f))
             })
             info.addView(TextView(this).apply {
                 text = "${fmt.format(java.util.Date(if (state.trashedAt > 0) state.trashedAt else files.updatedAt(workspace)))}" +

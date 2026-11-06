@@ -28,13 +28,14 @@ class AgentWorkspaceActivity : Activity() {
     private var job: Job? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); files = WorkspaceFiles(this)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16),dp(12),dp(16),dp(12)) }
         root.setBackgroundColor(android.graphics.Color.rgb(246,241,228))
         setContentView(root)
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; root.addView(this) }
         label("工作区对话", 22f)
 
-        choice = Spinner(this); root.addView(choice); controls += choice
+        choice = Spinner(this).apply {contentDescription="当前工作区"}; root.addView(choice); controls += choice
         val settings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         button(settings, "新建工作区") {
             val name = EditText(this).apply { hint = "工作区名称" }
@@ -67,15 +68,17 @@ class AgentWorkspaceActivity : Activity() {
                 } }.show()
         }
         button(settings, "查看工作区文件 / 打开手写页") { showFiles() }
-        input = EditText(this).apply { hint = "写下目标，或指定要调用的 Skill"; minLines = 3; gravity = android.view.Gravity.TOP; textSize = 18f }
+        input = EditText(this).apply { hint = "告诉 AI 要做什么";minLines=1;maxLines=4;gravity=android.view.Gravity.TOP;textSize=16f;contentDescription="工作区需求" }
         root.addView(input); controls += input
-        button(root, "发送") { val text = input.text.toString().trim(); if (text.isNotEmpty()) run(text) }
         button(settings, "验证本机工具调用（使用订阅额度）") {
             run("请使用工作区文件工具创建 /memory/pages/we-native-probe-${System.currentTimeMillis()}.md，内容为 WE_NATIVE_OK；然后用读取工具读取该文件，最后报告读取结果。必须实际调用工具。")
         }
         stop = Button(this).apply {
-            text = "停止"; visibility = android.view.View.GONE
-            setOnClickListener { job?.cancel(); output.append("\n已请求停止。") }
+            text="发送";isAllCaps=false;minHeight=dp(48);contentDescription="发送或停止当前任务"
+            setOnClickListener {
+                if(job?.isActive==true) {job?.cancel();output.append("\n已请求停止。")}
+                else {val text=input.text.toString().trim();if(text.isNotEmpty()) run(text)}
+            }
         }; root.addView(stop)
         output = label("", 17f).apply { setTextIsSelectable(true); setTextColor(android.graphics.Color.rgb(58,53,44)) }
         root.removeView(output)
@@ -91,8 +94,12 @@ class AgentWorkspaceActivity : Activity() {
         reload(intent.getStringExtra("workspace") ?: getPreferences(MODE_PRIVATE).getString("workspace", ""))
         intent.getStringExtra("feedback")?.let { input.setText(it) }
     }
+    private fun dp(value:Int)=(value*resources.displayMetrics.density).toInt()
     private fun button(root: LinearLayout, title: String, call: () -> Unit) {
-        val button = Button(this).apply { text = title; setOnClickListener { safe(call) } }
+        val button = Button(this).apply {
+            text=title;isAllCaps=false;textSize=14f;minHeight=dp(48);setTextColor(android.graphics.Color.rgb(58,53,44))
+            setPadding(dp(12),dp(4),dp(12),dp(4));contentDescription=title;setOnClickListener {safe(call)}
+        }
         controls += button; root.addView(button)
     }
     private fun safe(call: () -> Unit) { try { call() } catch (e: Exception) { Toast.makeText(this, e.message ?: "操作失败", Toast.LENGTH_LONG).show() } }
@@ -109,7 +116,7 @@ class AgentWorkspaceActivity : Activity() {
     private fun resetRuntime() { runtime?.close(); runtime = null; runtimeWorkspace = "" }
     private fun run(text: String) {
         if (job?.isActive == true) return
-        val workspace = current(); controls.forEach { it.isEnabled = false }; stop.visibility = android.view.View.VISIBLE
+        val workspace = current(); controls.forEach {it.isEnabled=false};stop.text="停止"
         output.append("\n你：$text\n")
         job = scope.launch {
             val answer = StringBuilder()
@@ -141,7 +148,7 @@ class AgentWorkspaceActivity : Activity() {
                 openPaper(pdf, true)
             } catch (e: CancellationException) { resetRuntime(); throw e }
             catch (e: Exception) { output.append("\n未完成：${e.message?.take(160) ?: e.javaClass.simpleName}"); resetRuntime() }
-            finally { controls.forEach { it.isEnabled = true }; stop.visibility = android.view.View.GONE }
+            finally {controls.forEach {it.isEnabled=true};stop.text="发送";choice.post {indexChanged()}}
         }
     }
     private fun confirm(owner: AgentRuntime, pending: PendingConfirmation, tool: String) {
