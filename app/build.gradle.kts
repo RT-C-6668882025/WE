@@ -30,8 +30,8 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         minSdk = 26
         targetSdk = 34
-        versionCode = 80
-        versionName = "0.8.0"
+        versionCode = 100
+        versionName = "0.10.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 可选的局域网降级识别通道默认地址：开源版留空，用户如自建 Mac 端 server.py
         // 可在设置里填（不填则纯走 ML Kit 本地识别 + 用户配置的大模型）。
@@ -94,6 +94,10 @@ android {
 }
 
 dependencies {
+    // Apache-2.0: mature SVG paths, gradients, groups, clip paths and text on the shared canvas.
+    implementation("com.caverock:androidsvg-aar:1.4")
+    // Apache-2.0: photograph orientation before bounded image import.
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     // BSD-3-Clause: embedded HTTP framing for the Android loopback MCP endpoint.
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     // MIT: embedded Android/JVM agent loop, Skills, workspace and MCP client.

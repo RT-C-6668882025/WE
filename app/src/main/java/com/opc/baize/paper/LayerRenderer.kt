@@ -50,7 +50,7 @@ class LayerRenderer : Closeable {
                 if(state.handle!=0L) NativeDrawing.destroy(state.handle)
                 state.handle=NativeDrawing.create(state.width,state.height);check(state.handle!=0L)
                 check(NativeDrawing.seed(state.handle,pixels,state.width,state.height))
-            } else if(stroke.operation!="polygon" && stroke.engine==DrawdanceBrush.ENGINE) {
+            } else if(stroke.operation !in ArtworkContent.types && stroke.operation!="polygon" && stroke.engine==DrawdanceBrush.ENGINE) {
                 if(state.handle==0L) {
                     state.handle=NativeDrawing.create(state.width,state.height);check(state.handle!=0L)
                     state.bitmap?.let { old -> val pixels=IntArray(state.width*state.height)
@@ -83,7 +83,7 @@ class LayerRenderer : Closeable {
             update(active,page.strokes.filter { it.layerId==layer.id },scale)
             var raster=active.bitmap!!;var temporary: Bitmap?=null
             if(preview!=null && preview.operation!="fill" && preview.layerId==layer.id && preview.points.isNotEmpty()) {
-                if(preview.operation!="polygon" && preview.engine==DrawdanceBrush.ENGINE) {
+                if(preview.operation !in ArtworkContent.types && preview.operation!="polygon" && preview.engine==DrawdanceBrush.ENGINE) {
                     val copy=if(active.handle!=0L) NativeDrawing.cloneCanvas(active.handle) else NativeDrawing.create(w,h)
                     check(copy!=0L)
                     try {

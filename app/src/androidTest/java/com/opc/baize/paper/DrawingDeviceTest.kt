@@ -212,4 +212,164 @@ class DrawingDeviceTest {
         }
     }
 
+    @Test fun androidSvgGradientsClippingTextAndImagesUseTheSharedRenderer() {
+        val svg="""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient><clipPath id="c"><rect width="50" height="100"/></clipPath></defs><g clip-path="url(#c)"><rect width="100" height="100" fill="url(#g)"/></g></svg>"""
+        fun op(type:String,content:String)=org.json.JSONObject().put("action",type).put("content",content).put("x",10).put("y",10).put("x2",90).put("y2",90)
+        val page=CanvasEdits.apply(PaperPage(160,100,0,emptyList()),org.json.JSONArray().put(op("svg",svg)))
+        ArtworkRenderer.validate(page.strokes.single())
+        LayerRenderer().use {renderer -> val image=raster(renderer,page)
+            try {assertTrue(Color.red(image.getPixel(20,50))>Color.blue(image.getPixel(20,50)));assertEquals(0,Color.alpha(image.getPixel(75,50)))} finally {image.recycle()}
+        }
+        val bitmap=Bitmap.createBitmap(2,2,Bitmap.Config.ARGB_8888).apply {eraseColor(Color.GREEN)}
+        val bytes=java.io.ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);bitmap.recycle()
+        val imagePage=CanvasEdits.apply(PaperPage(160,100,0,emptyList()),org.json.JSONArray().put(op("image",android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP))))
+        LayerRenderer().use {renderer -> val image=raster(renderer,imagePage)
+            try {assertEquals(Color.GREEN,image.getPixel(50,50))} finally {image.recycle()}
+        }
+        val textPage=CanvasEdits.apply(PaperPage(160,100,0,emptyList()),org.json.JSONArray().put(op("text","WE")))
+        LayerRenderer().use {renderer -> val image=raster(renderer,textPage)
+            try {val pixels=IntArray(160*100);image.getPixels(pixels,0,160,0,0,160,100);assertTrue(pixels.any {Color.alpha(it)>0})} finally {image.recycle()}
+        }
+    }
+    @Test fun malformedSvgDoesNotCommitThroughMcpAndArtworkSurvivesHistory() {
+        val context=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("SVG-MCP-regression")
+        try {
+            val doc=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+            val tools=com.opc.baize.mcp.WorkspaceMcpTools(context)
+            fun args()=org.json.JSONObject().put("workspace_id",workspace.id).put("path","/"+doc.pdf.relativeTo(workspace.root).invariantSeparatorsPath)
+            fun svg(source:String)=org.json.JSONObject().put("action","svg").put("content",source).put("x",10).put("y",10).put("x2",100).put("y2",100)
+            val failed=tools.execute("edit_canvas",args().put("operation_id","bad-svg-${workspace.id}").put("expected_revision",0)
+                .put("operations",org.json.JSONArray().put(svg("<svg viewBox='0 0 10 10'><g></svg>"))))
+            assertEquals("failed",failed.getString("status"))
+            assertEquals(0L,tools.execute("get_canvas_context",args()).getJSONObject("result").getLong("revision"))
+            val source="""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>"""
+            val success=tools.execute("edit_canvas",args().put("operation_id","good-svg-${workspace.id}").put("expected_revision",0).put("operations",org.json.JSONArray().put(svg(source))))
+            assertEquals("succeeded",success.getString("status"))
+            val undo=tools.execute("canvas_history",args().put("operation_id","undo-svg-${workspace.id}").put("expected_revision",1).put("action","undo"))
+            assertEquals(0,undo.getJSONObject("result").getInt("stroke_count"))
+            val redo=tools.execute("canvas_history",args().put("operation_id","redo-svg-${workspace.id}").put("expected_revision",2).put("action","redo"))
+            assertEquals(1,redo.getJSONObject("result").getInt("stroke_count"))
+            val exported=tools.execute("export_canvas",args().put("operation_id","export-svg-${workspace.id}").put("expected_revision",3))
+            assertEquals("succeeded",exported.getString("status"));assertTrue(exported.getJSONObject("result").has("content"))
+        } finally {workspace.container.deleteRecursively()}
+    }
+
+    @Test fun photoImportNormalizesExifOrientationBeforeEmbeddingPixels() {
+        val context=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val file=java.io.File.createTempFile("we-exif-",".jpg",context.cacheDir)
+        try {
+            val original=Bitmap.createBitmap(8,4,Bitmap.Config.ARGB_8888).apply {eraseColor(Color.GREEN)}
+            file.outputStream().use {assertTrue(original.compress(Bitmap.CompressFormat.JPEG,100,it))};original.recycle()
+            androidx.exifinterface.media.ExifInterface(file.path).apply {
+                setAttribute(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90.toString());saveAttributes()
+            }
+            val imported=ArtworkImport.read(context,android.net.Uri.fromFile(file))
+            assertEquals(4,imported.width);assertEquals(8,imported.height)
+            val data=android.util.Base64.decode(imported.content,android.util.Base64.NO_WRAP)
+            val decoded=android.graphics.BitmapFactory.decodeByteArray(data,0,data.size)
+            try {assertEquals(4,decoded.width);assertEquals(8,decoded.height);assertTrue(Color.green(decoded.getPixel(1,1))>200)} finally {decoded.recycle()}
+        } finally {file.delete()}
+    }
+
+    @Test fun pendingLocalSaveBlocksTheOfflineMcpPath() {
+        val id=java.util.UUID.randomUUID().toString();val tasks=java.util.ArrayDeque<Runnable>()
+        val queue=CanvasSaveQueue(java.util.concurrent.Executor {tasks.addLast(it)},{_,_,_->},{})
+        val page=PaperPage(600,840,1,emptyList());var invoked=false
+        try {
+            queue.enqueue(id,0,page)
+            assertThrows(Exception::class.java) {CanvasSession.change("workspace",id,0,0,{it}) {invoked=true;page}}
+            assertFalse(invoked)
+            tasks.removeFirst().run()
+            assertEquals(page,CanvasSession.change("workspace",id,0,1,{it}) {invoked=true;page})
+            assertTrue(invoked)
+        } finally {while(tasks.isNotEmpty()) tasks.removeFirst().run()}
+    }
+    @Test fun coreToolsFitPhoneLandscapeAndTabletWithoutHorizontalScrolling() {
+        val instrumentation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("responsive-canvas")
+        val doc=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+        val activity=instrumentation.startActivitySync(android.content.Intent(context,PaperActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("workspace",workspace.id).putExtra("generatedPdf",doc.pdf.path)) as PaperActivity
+        fun views(v:android.view.View):List<android.view.View> = listOf(v)+if(v is android.view.ViewGroup) (0 until v.childCount).flatMap {views(v.getChildAt(it))} else emptyList()
+        try {
+            val deadline=System.currentTimeMillis()+15000;var loaded=false
+            while(!loaded && System.currentTimeMillis()<deadline) {
+                instrumentation.runOnMainSync {loaded=views(activity.window.decorView).filterIsInstance<PaperInkView>().single().page.width>1}
+                if(!loaded) Thread.sleep(30)
+            }
+            assertTrue(loaded)
+            instrumentation.runOnMainSync {
+                val root=(activity.findViewById<android.view.ViewGroup>(android.R.id.content)).getChildAt(0) as android.view.ViewGroup
+                val density=activity.resources.displayMetrics.density
+                val errors=mutableListOf<String>()
+                for((label,size) in listOf("phone" to (320 to 568),"landscape" to (640 to 360),"tablet" to (800 to 600))) {
+                    val w=(size.first*density).toInt();val h=(size.second*density).toInt()
+                    repeat(3) {root.measure(android.view.View.MeasureSpec.makeMeasureSpec(w,android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(h,android.view.View.MeasureSpec.EXACTLY));root.layout(0,0,w,h)}
+                    val all=views(root)
+                    val required=listOf("画笔","框选","橡皮","笔刷","图层","发送")+if(label=="landscape") listOf("撤销","重做") else emptyList()
+                    for(name in required) {
+                        val button=all.filterIsInstance<android.widget.Button>().filter {it.isShown}.single {it.contentDescription?.toString()==name || (name=="发送" && it.text=="发送")}
+                        val bounds=android.graphics.Rect();button.getDrawingRect(bounds);root.offsetDescendantRectToMyCoords(button,bounds)
+                        if(!(bounds.left>=0 && bounds.right<=w && bounds.top>=0 && bounds.bottom<=h)) errors.add("$label $name outside viewport: $bounds")
+                        if(button.width<48*density) errors.add("$label $name touch target: ${button.width}/$density")
+                    }
+                    val canvasHeight=all.filterIsInstance<PaperInkView>().single().height
+                    if(canvasHeight<h*.3f) errors.add("$label canvas too small: $canvasHeight of $h")
+                    val image=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);root.draw(Canvas(image))
+                    try {
+                        val values=android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,"canvas-$label.png")
+                            put(android.provider.MediaStore.Images.Media.MIME_TYPE,"image/png")
+                            if(android.os.Build.VERSION.SDK_INT>=29) put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,"Pictures/WE-CI/")
+                        }
+                        val uri=requireNotNull(context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values))
+                        context.contentResolver.openOutputStream(uri)!!.use {assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,it))}
+                    } finally {image.recycle()}
+                }
+                assertTrue(errors.joinToString("; "),errors.isEmpty())
+            }
+        } finally {instrumentation.runOnMainSync {activity.finish()};workspace.container.deleteRecursively()}
+    }
+
+    @Test fun failedSaveAndRetrySurviveActivityRecreation() {
+        val instrumentation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("rotation-save-recovery")
+        val doc=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+        var activity=instrumentation.startActivitySync(android.content.Intent(context,PaperActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("workspace",workspace.id).putExtra("generatedPdf",doc.pdf.path)) as PaperActivity
+        fun ink(a:PaperActivity)=PaperActivity::class.java.getDeclaredField("ink").apply {isAccessible=true}.get(a) as PaperInkView
+        fun saves(a:PaperActivity)=PaperActivity::class.java.getDeclaredField("saveQueue").apply {isAccessible=true}.get(a) as CanvasSaveQueue
+        fun await(check:()->Boolean) {val deadline=System.currentTimeMillis()+15000;while(System.currentTimeMillis()<deadline) {var done=false;instrumentation.runOnMainSync {done=check()};if(done) return;Thread.sleep(30)};fail("Timed out waiting for canvas recovery")}
+        var obstacle:java.io.File?=null
+        try {
+            await {ink(activity).page.width>1}
+            var document=""
+            instrumentation.runOnMainSync {document=PaperActivity::class.java.getDeclaredField("document").apply {isAccessible=true}.get(activity) as String}
+            obstacle=java.io.File(context.filesDir,"papers/$document/page-0.ink.json").apply {assertTrue(mkdir())}
+            instrumentation.runOnMainSync {assertTrue(ink(activity).applyArtwork(org.json.JSONArray("""[{"action":"line","x":20,"y":20,"x2":60,"y2":60}]""")))}
+            await {saves(activity).state().error!=null}
+            val previous=activity
+            instrumentation.runOnMainSync {activity.recreate()}
+            await {
+                val resumed=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<PaperActivity>().firstOrNull {it!==previous}
+                if(resumed!=null) activity=resumed
+                activity!==previous && ink(activity).page.width>1
+            }
+            instrumentation.runOnMainSync {assertEquals(1,ink(activity).page.strokes.size);assertNotNull(saves(activity).state().error)}
+            assertTrue(obstacle.delete());obstacle=null
+            instrumentation.runOnMainSync {saves(activity).retry()}
+            await {saves(activity).isIdle()}
+            assertTrue(CanvasWriteGuard.isClear(document,0))
+            assertEquals(1,PaperRepository(context).load(document,0,ink(activity).page.width,ink(activity).page.height).strokes.size)
+        } finally {
+            obstacle?.delete()
+            instrumentation.runOnMainSync {if(!activity.isDestroyed) {saves(activity).retry();activity.finish()}}
+            PaperIo.executor.submit {}.get(5,java.util.concurrent.TimeUnit.SECONDS)
+            workspace.container.deleteRecursively()
+        }
+    }
+
 }

@@ -4,7 +4,9 @@ import {randomBytes,randomUUID,createHash} from 'node:crypto';
 import {existsSync,readFileSync,writeFileSync,renameSync,mkdirSync,chmodSync,openSync,fsyncSync,closeSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-export const tools=JSON.parse(readFileSync(new URL('../app/src/main/assets/we-mcp-tools.json',import.meta.url),'utf8'));
+const schemaBytes=readFileSync(new URL('../app/src/main/assets/we-mcp-tools.json',import.meta.url));
+export const toolsSchemaSha256=createHash('sha256').update(schemaBytes).digest('hex');
+export const tools=JSON.parse(schemaBytes.toString('utf8'));
 const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
 const fingerprint=(name,args)=>createHash('sha256').update(JSON.stringify(canonical([name,args]))).digest('hex');
 const MUTATIONS=new Set(tools.filter(t=>!t.annotations.readOnlyHint).map(t=>t.name));
@@ -26,7 +28,7 @@ export function createRelay({origins=['https://localhost'],timeout=25000,maxSess
   if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Headers','Content-Type,Authorization,MCP-Protocol-Version');res.setHeader('Access-Control-Allow-Methods','POST,GET,OPTIONS')}
   if(req.method==='OPTIONS')return send(res,204);
   const path=new URL(req.url,'http://relay').pathname;
-  if(path==='/health'&&req.method==='GET')return send(res,200,{ok:true,name:'write-everything',protocol:2,persistent:!!dataFile});
+  if(path==='/health'&&req.method==='GET')return send(res,200,{ok:true,name:'write-everything',protocol:2,persistent:!!dataFile,tools_schema_sha256:toolsSchemaSha256});
   if(path==='/pair'&&req.method==='POST'){
    if(sessions.size>=maxSessions)return send(res,503,{error:'Pairing capacity reached'});
    const s=restore({agent:randomBytes(32).toString('hex'),device:randomBytes(32).toString('hex')});save();return send(res,200,{agentToken:s.agent,deviceToken:s.device});

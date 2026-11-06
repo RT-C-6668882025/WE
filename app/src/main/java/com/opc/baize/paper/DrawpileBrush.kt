@@ -40,6 +40,7 @@ object DrawpileBrush {
 /** Shared by the editor snapshot and MCP so feedback uses identical ink. */
 object PaperStrokeRenderer {
     fun draw(canvas: Canvas, stroke: PaperStroke) {
+        if(stroke.operation in ArtworkContent.types) {ArtworkRenderer.draw(canvas,stroke);return}
         if (stroke.operation == "polygon") {
             if(stroke.points.size<3) return
             val path=Path();stroke.points.forEachIndexed {i,p -> if(i==0) path.moveTo(p.x,p.y) else path.lineTo(p.x,p.y)};path.close()

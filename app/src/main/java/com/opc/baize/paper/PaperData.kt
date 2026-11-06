@@ -24,7 +24,7 @@ data class BrushSettings(
     }
 }
 data class PaperStroke(val points: List<InkPoint>, val width: Float = 1.8f, val color: Int = -16777216,
-    val engine: String = "vector", val layerId: Int = 1, val brush: BrushSettings = BrushSettings(), val operation: String = "stroke")
+    val engine: String = "vector", val layerId: Int = 1, val brush: BrushSettings = BrushSettings(), val operation: String = "stroke", val content: String = "", val fontSize: Float = 24f)
 data class PaperLayer(val id: Int, val name: String, val visible: Boolean = true, val locked: Boolean = false,
     val opacity: Float = 1f, val blend: String = "normal") {
     init { require(id > 0 && name.length <= 120 && opacity.isFinite() && opacity in 0f..1f && blend in blends) }
@@ -39,7 +39,7 @@ data class PaperPage(val width: Int, val height: Int, val revision: Long, val st
             .put("visible",it.visible).put("locked",it.locked).put("opacity",it.opacity).put("blend",it.blend)) } })
         .put("strokes",JSONArray().apply { strokes.forEach { stroke ->
             put(JSONObject().put("width",stroke.width).put("color",stroke.color).put("engine",stroke.engine)
-                .put("layer",stroke.layerId).put("brush",stroke.brush.encode()).put("operation",stroke.operation).put("points",JSONArray().apply {
+                .put("content",stroke.content).put("font_size",stroke.fontSize).put("layer",stroke.layerId).put("brush",stroke.brush.encode()).put("operation",stroke.operation).put("points",JSONArray().apply {
                     stroke.points.forEach { put(JSONArray(listOf(it.x,it.y,it.pressure,it.time))) }
                 }))
         } }).toString()
@@ -70,8 +70,13 @@ data class PaperPage(val width: Int, val height: Int, val revision: Long, val st
                     InkPoint(x,y,pressure,p.getLong(3))
                 },penWidth,stroke.optInt("color",-16777216),stroke.optString("engine","vector").also {
                     require(it in setOf("vector","drawpile-classic-v1","drawdance-v1"))
-                },layer,BrushSettings.decode(stroke.optJSONObject("brush")),stroke.optString("operation","stroke").also {require(it in setOf("stroke","fill","polygon"))})
+                },layer,BrushSettings.decode(stroke.optJSONObject("brush")),stroke.optString("operation","stroke").also {require(it in setOf("stroke","fill","polygon","svg","text","image"))},
+                    stroke.optString("content"),stroke.optDouble("font_size",24.0).toFloat()).also { item ->
+                    ArtworkContent.validate(item.operation,item.content,item.fontSize)
+                    if(item.operation in ArtworkContent.types) require(item.points.size==4) { "Artwork requires four rectangle corners" }
+                }
             }
+            require(decoded.sumOf {it.content.length}<=2000000) { "Artwork content limit 2 MB" }
             return PaperPage(width,height,revision,decoded,layers,active)
         }
     }
