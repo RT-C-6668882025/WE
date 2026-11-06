@@ -103,6 +103,7 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
         }.setNegativeButton("关闭",null).show()
     }
     private fun artwork(type:String,index:Int?=null) {
+        val initialPage=ink.page
         val old=index?.let {ink.page.strokes[it]}
         val source=EditText(activity).apply {
             hint=if(type=="text") "输入文字" else "粘贴矢量图内容"
@@ -116,6 +117,7 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
         dialog.setOnShowListener {dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val font=size.text.toString().toFloatOrNull() ?: 24f
             try {
+                require(ink.page==initialPage) { "画布已变化，请保留输入内容并重新打开对象编辑" }
                 ArtworkContent.validate(type,source.text.toString(),font)
                 val op=org.json.JSONObject().put("action",if(index==null) type else "replace_artwork")
                     .put("content",source.text.toString()).put("font_size",font)
