@@ -267,7 +267,7 @@ class PaperActivity : Activity() {
         saveQueue=retained?.saves ?: CanvasSaveQueue(io,{id,index,data -> store.save(id,index,data)},{})
         saveQueue.observe {state ->
             runOnUiThread {if(!destroyed) {
-                saveRow.visibility=if(state.error!=null || state.pending>0) android.view.View.VISIBLE else android.view.View.GONE
+                saveRow.visibility=if(state.error!=null) android.view.View.VISIBLE else android.view.View.GONE
                 refreshHistory()
                 saveLabel.text=when {state.error!=null->"保存失败 · 笔迹仍保留在当前画布";state.pending>0->"正在保存…";else->"已保存"}
                 retrySave.visibility=if(state.error!=null) android.view.View.VISIBLE else android.view.View.GONE
