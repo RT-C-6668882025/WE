@@ -1,5 +1,6 @@
 package com.opc.baize.subscription
 
+import com.opc.baize.ui.WeUi
 import android.app.Activity
 import android.os.Bundle
 import android.content.Intent
@@ -38,8 +39,11 @@ class SubscriptionSettingsActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); gateway = SubscriptionGateway.get(this)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24) }
-        setContentView(ScrollView(this).apply { addView(root) })
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(WeUi.dp(this@SubscriptionSettingsActivity,16),WeUi.dp(this@SubscriptionSettingsActivity,8),WeUi.dp(this@SubscriptionSettingsActivity,16),WeUi.dp(this@SubscriptionSettingsActivity,24)) }
+        val screen=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(WeUi.paper)}
+        screen.addView(WeUi.header(this,"AI 模型设置"))
+        screen.addView(ScrollView(this).apply {addView(root)},LinearLayout.LayoutParams(-1,0,1f))
+        setContentView(screen)
         fun label(text: String, size: Float = 15f) = TextView(this).apply { this.text = text; textSize = size; root.addView(this) }
         label("ChatGPT 订阅模型", 24f)
         label("版本：${com.opc.baize.BuildConfig.VERSION_NAME}", 12f)
@@ -52,16 +56,16 @@ class SubscriptionSettingsActivity : Activity() {
         }
         action(root, "刷新账号模型列表") { val found = gateway.catalog(); "已读取 ${found.size} 个模型。请选择文字和图片模型并保存。" }
         label("文字回答模型")
-        textChoice = Spinner(this); root.addView(textChoice)
+        textChoice = Spinner(this).apply {contentDescription="文字回答模型"}; root.addView(textChoice)
         label("图片 / 手写识别 / PDF 批改模型")
-        imageChoice = Spinner(this); root.addView(imageChoice)
+        imageChoice = Spinner(this).apply {contentDescription="图片与手写模型"}; root.addView(imageChoice)
         directVision = CheckBox(this).apply { text = "直接使用订阅图片识别（跳过本机识别等待）"; isChecked = SubscriptionSelection.read(this@SubscriptionSettingsActivity).directVision }; root.addView(directVision)
         label("关闭时优先本机识别，失败后使用订阅图片。图片转写和文字回答分别请求，均使用订阅额度。")
         button(root, "保存选择并启用订阅") {
             try {
                 check(gateway.isAuthorized) { "请先完成登录" }
                 SubscriptionSelection.save(this, selected(), catalog)
-                status.text = "已保存并启用。返回墨灵即可书写；PDF 使用图片模型。"; update()
+                status.text = "已保存并启用。返回 WE即可书写；PDF 使用图片模型。"; update()
             } catch (e: Exception) { status.text = if (!gateway.isAuthorized) "请先完成登录。" else "请从当前账号列表中选择模型后保存。" }
         }
         tests = label("")
@@ -115,8 +119,11 @@ class SubscriptionSettingsActivity : Activity() {
         }; root.addView(recover)
         cancel = Button(this).apply { text = "取消正在进行的授权"; setOnClickListener { gateway.cancel(); observedLogin = -1; update() } }; root.addView(cancel)
         root.addView(Button(this).apply { text = "ChatGPT 用量设置"; setOnClickListener { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/settings/usage"))) } catch (e: Exception) { status.text = "请手动打开 ChatGPT 设置 → 用量。" } } })
-        root.addView(Button(this).apply { text = "返回墨灵"; setOnClickListener { finish() } })
-        diagnostics = label("").apply { setTextIsSelectable(true) }
+
+        diagnostics=label("").apply {setTextIsSelectable(true);visibility=View.GONE;textSize=12f;setTextColor(WeUi.secondary)}
+        root.addView(WeUi.button(this,"诊断详情 ▾") {diagnostics.visibility=if(diagnostics.visibility==View.GONE) View.VISIBLE else View.GONE})
+        status.accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE
+        WeUi.style(screen)
         showModels(gateway.cachedCatalog())
     }
     private fun selected(): SubscriptionChoice {
@@ -160,7 +167,7 @@ class SubscriptionSettingsActivity : Activity() {
         showChecks(); diagnostics.text = gateway.diagnostics()
     }
     private fun button(root: LinearLayout, label: String, call: () -> Unit) {
-        val b = Button(this).apply { text = label; setOnClickListener { call() } }; buttons.add(b); root.addView(b)
+        val b = Button(this).apply { text = label;if(label=="Continue with ChatGPT" || label=="保存选择并启用订阅") tag=WeUi.PRIMARY; setOnClickListener { call() } }; buttons.add(b); root.addView(b)
     }
     private fun action(root: LinearLayout, label: String, call: () -> String) = button(root, label) { task(call) }
     private fun task(call: () -> String) {

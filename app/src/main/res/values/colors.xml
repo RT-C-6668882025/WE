@@ -5,7 +5,7 @@
     <color name="inkDark">#1C1A16</color>      <!-- 正文墨黑 -->
     <color name="inkStroke">#111111</color>    <!-- 笔迹墨色 -->
     <color name="inkGray">#6B6355</color>      <!-- “你写道”灰墨 -->
-    <color name="inkFaint">#A39A87</color>     <!-- 页码/小字提示 -->
+    <color name="inkFaint">#69604E</color>     <!-- 页码/小字提示 -->
     <color name="rule">#D8CFB8</color>         <!-- 顶栏分隔线 -->
     <color name="title">#3A352C</color>        <!-- 书名/状态墨点 -->
 </resources>
