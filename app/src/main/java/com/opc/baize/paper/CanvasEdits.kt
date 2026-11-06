@@ -113,6 +113,7 @@ object CanvasEdits {
                         val raw=op.getJSONArray("indices");require(raw.length() in 1..10000)
                         (0 until raw.length()).map {require(raw.get(it) is Int || raw.get(it) is Long);raw.getInt(it)}.toSet()
                     } else {
+                        if(op.has("bounds")) require(op.get("bounds") is JSONArray) { "bounds must be an array" }
                         val bounds=op.optJSONArray("bounds")
                         if(bounds!=null) {
                             require(bounds.length()==4 && (0..3).all {bounds.get(it) is Number && bounds.getDouble(it).isFinite()})

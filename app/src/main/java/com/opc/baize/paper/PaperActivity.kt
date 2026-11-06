@@ -632,8 +632,7 @@ class PaperActivity : Activity() {
                     } finally { runtime.close(); studyRuntime = null }
                 }
                 if (stopped) return@launch
-                if (prefs.getString("paper_last_pdf_$owner",null) == pdf.canonicalPath) return@post
-            readyPdf = pdf; generatedButton.visibility = android.view.View.VISIBLE
+                readyPdf = pdf; generatedButton.visibility = android.view.View.VISIBLE
                 if (document == id && pageIndex == index && ink.page.revision == revision && interactionVersion == version) {
                     openGenerated(pdf, workspace.id, LearningTurn.sourcePath(pdf))
                 } else status.text = "新学习页已生成。你正在书写，点“查看生成页”再打开。"
