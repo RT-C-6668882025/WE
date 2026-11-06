@@ -153,4 +153,27 @@ class DrawingDeviceTest {
             bitmap.recycle()
         } }
     }
+    @Test fun solidPolygonRendersAndSeedFillStaysInsideTheBoundary() {
+        val page=CanvasEdits.apply(PaperPage(160,100,0,emptyList()),org.json.JSONArray("""[
+            {"action":"rectangle","x":20,"y":20,"x2":140,"y2":80,"filled":true,"color":"#FF0000"},
+            {"action":"fill","x":70,"y":50,"color":"#0000FF"}
+        ]"""))
+        LayerRenderer().use {renderer ->
+            val image=raster(renderer,page)
+            try {assertEquals(Color.BLUE,image.getPixel(70,50));assertEquals(0,Color.alpha(image.getPixel(5,5)))}
+            finally {image.recycle()}
+        }
+    }
+    @Test fun readyCanvasInboxSurvivesSubscriberAbsence() {
+        val context=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("MCP-inbox")
+        try {
+            val page=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+            com.opc.baize.agent.WorkspaceDrawing.announce(workspace,page.pdf)
+            assertEquals(page.pdf.canonicalPath,com.opc.baize.agent.WorkspaceDrawing.pending(workspace)?.path)
+            java.io.File(workspace.container,"ready-canvas.json").writeText("""{"path":"/../../outside.pdf"}""")
+            assertNull(com.opc.baize.agent.WorkspaceDrawing.pending(workspace))
+        } finally {workspace.container.deleteRecursively()}
+    }
+
 }

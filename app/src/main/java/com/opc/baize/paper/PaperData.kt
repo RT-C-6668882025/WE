@@ -70,7 +70,7 @@ data class PaperPage(val width: Int, val height: Int, val revision: Long, val st
                     InkPoint(x,y,pressure,p.getLong(3))
                 },penWidth,stroke.optInt("color",-16777216),stroke.optString("engine","vector").also {
                     require(it in setOf("vector","drawpile-classic-v1","drawdance-v1"))
-                },layer,BrushSettings.decode(stroke.optJSONObject("brush")),stroke.optString("operation","stroke").also {require(it in setOf("stroke","fill"))})
+                },layer,BrushSettings.decode(stroke.optJSONObject("brush")),stroke.optString("operation","stroke").also {require(it in setOf("stroke","fill","polygon"))})
             }
             return PaperPage(width,height,revision,decoded,layers,active)
         }

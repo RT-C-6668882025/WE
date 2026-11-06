@@ -48,4 +48,48 @@ class CanvasEditsTest {
         assertTrue(after.strokes.first {it.layerId==1 && it.brush.erase}.brush.erase)
         assertEquals("fill",after.strokes.last().operation)
     }
+    @Test fun solidShapesCurvesAndSeedFillRemainEditable() {
+        val result=CanvasEdits.apply(PaperPage(600,840,0,emptyList()),ops("""[
+            {"action":"rectangle","x":20,"y":20,"x2":80,"y2":80,"filled":true,"color":"#FF0000"},
+            {"action":"polygon","points":[[100,100],[150,100],[125,150]],"filled":true},
+            {"action":"bezier","points":[[10,10],[20,90],[80,90],[90,10]]},
+            {"action":"fill","x":50,"y":50,"color":"#0000FF"}
+        ]"""))
+        assertEquals(listOf("polygon","polygon","stroke","fill"),result.strokes.map {it.operation})
+        assertEquals(97,result.strokes[2].points.size)
+        assertEquals(50f,result.strokes.last().points.first().x,0f)
+        assertEquals(result,PaperPage.decode(result.encode()))
+    }
+    @Test fun regionRestylingAndWholeLayerTransformsPreserveOtherLayersAndBrushFields() {
+        val original=CanvasEdits.apply(PaperPage(600,840,0,emptyList()),ops("""[
+            {"action":"line","x":20,"y":20,"x2":40,"y2":40,"brush":{"hardness":0.2,"pressure":false}},
+            {"action":"line","x":200,"y":200,"x2":240,"y2":240},
+            {"action":"add_layer","layer_id":2},
+            {"action":"line","x":20,"y":20,"x2":40,"y2":40}
+        ]"""))
+        val result=CanvasEdits.apply(original,ops("""[
+            {"action":"restyle","layer_id":1,"bounds":[0,0,50,50],"color":"#0000FF","brush":{"opacity":0.5}},
+            {"action":"transform","layer_id":1,"dx":10},
+            {"action":"delete_strokes","layer_id":2}
+        ]"""))
+        assertEquals(2,result.strokes.size)
+        assertEquals(0xff0000ff.toInt(),result.strokes[0].color)
+        assertEquals(.2f,result.strokes[0].brush.hardness,0f)
+        assertFalse(result.strokes[0].brush.pressure)
+        assertEquals(.5f,result.strokes[0].brush.opacity,0f)
+        assertEquals(30f,result.strokes[0].points[0].x,0f)
+        assertEquals(210f,result.strokes[1].points[0].x,0f)
+        assertEquals(3,original.strokes.size)
+    }
+    @Test fun invalidShapeAndAmbiguousSelectionFailAtomically() {
+        val original=PaperPage(600,840,0,emptyList())
+        for(raw in listOf(
+            """[{"action":"fill","x":20}]""",
+            """[{"action":"bezier","points":[[0,0],[10,10],[20,20]]}]""",
+            """[{"action":"line","x":0,"y":0,"x2":1,"y2":1,"filled":true}]""",
+            """[{"action":"transform","indices":[0],"bounds":[0,0,10,10]}]"""
+        )) assertThrows(IllegalArgumentException::class.java) {CanvasEdits.apply(original,ops(raw))}
+        assertTrue(original.strokes.isEmpty())
+    }
+
 }

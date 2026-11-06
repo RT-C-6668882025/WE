@@ -574,7 +574,7 @@
   },
   {
     "name": "get_canvas_context",
-    "description": "Read saved revision, layer IDs and stroke count for a PDF path. Without path returns the foreground editor context or active:null. Active context includes live revision, tool, brush, viewport, selection and input_in_progress. Mutations require the saved and live revision to agree; read_page returns saved vectors only.",
+    "description": "Read saved revision, layer IDs and stroke count for a PDF path. Without path returns the foreground editor context or active:null. Active context includes live revision, tool, brush, viewport, selection and input_in_progress. Mutations require the saved and live revision to agree; read_page returns saved vectors only. With path also returns paginated object indices/bounds/style, supported actions, blend modes and brush presets. Use object indices at this revision to edit specific content.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -590,6 +590,11 @@
           "type": "integer",
           "minimum": 0,
           "description": "Zero based; default 0"
+        },
+        "stroke_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Object summary pagination offset; default 0, 100 per page. Requires path."
         }
       },
       "required": [
@@ -606,7 +611,7 @@
   },
   {
     "name": "edit_canvas",
-    "description": "Atomic batch edits to saved vectors and the foreground canvas when open. Required expected_revision; stale or in-progress input fails without changes. stroke/erase require points; line/rectangle/ellipse require x,y,x2,y2; fill fills entire layer. Layers support add/update/select/delete/reorder/duplicate; clear_layer clears only unlocked layer. transform/delete_strokes require indices from read_page; transform supports dx/dy/scale/rotation/mirror/duplicate around center_x/y (default page center). All coordinates are page points; out-of-bounds transforms fail. Brush options include pressure, opacity, hardness, smudge and MyPaint. Each successful batch is one undo step. Does not modify original PDF.",
+    "description": "Atomic batch edits to saved vectors and the foreground canvas when open. Required expected_revision; stale or in-progress input fails without changes. stroke/erase require points; line/rectangle/ellipse require x,y,x2,y2; fill fills entire layer. Layers support add/update/select/delete/reorder/duplicate; clear_layer clears only unlocked layer. transform/delete_strokes require indices from read_page; transform supports dx/dy/scale/rotation/mirror/duplicate around center_x/y (default page center). All coordinates are page points; out-of-bounds transforms fail. Brush options include pressure, opacity, hardness, smudge and MyPaint. Each successful batch is one undo step. Does not modify original PDF. polygon accepts 3+ [x,y] points, bezier exactly four cubic control points. filled=true creates a solid rectangle/ellipse/polygon. fill accepts seed x,y (default 0,0); flood samples current layer only. restyle changes existing color/width/brush; partial brush fields preserve other settings. transform/delete_strokes/restyle select by indices, bounds, or entire layer if neither is given. bounds selects whole strokes, not pixel clipping.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -651,7 +656,10 @@
                   "duplicate_layer",
                   "clear_layer",
                   "transform",
-                  "delete_strokes"
+                  "delete_strokes",
+                  "polygon",
+                  "bezier",
+                  "restyle"
                 ]
               },
               "layer_id": {
@@ -760,7 +768,7 @@
                   "type": "integer",
                   "minimum": 0
                 },
-                "description": "Zero-based stroke indices from read_page at expected_revision. Must belong to layer_id."
+                "description": "Stroke indices from get_canvas_context/read_page. For transform/delete_strokes/restyle, omit indices and bounds to address all strokes on layer_id."
               },
               "name": {
                 "type": "string",
@@ -793,6 +801,19 @@
                 "type": "integer",
                 "minimum": 0,
                 "description": "Bottom-to-top layer position"
+              },
+              "filled": {
+                "type": "boolean",
+                "description": "Solid vector fill for rectangle, ellipse or polygon. Default false; not supported for open lines/bezier."
+              },
+              "bounds": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": {
+                  "type": "number"
+                },
+                "description": "[left,top,right,bottom]. Select whole strokes with at least one point in bounds on layer_id; not a pixel mask. Mutually exclusive with indices."
               }
             },
             "required": [

@@ -26,7 +26,7 @@ class WorkspaceFiles(private val context: Context) {
         val id = UUID.randomUUID().toString()
         val dir = File(base, id).apply { check(mkdirs()) }
         File(dir, "title.txt").writeText(name.trim())
-        return WeWorkspace(id, name.trim(), dir).also { it.root }
+        return WeWorkspace(id, name.trim(), dir).also { it.root; WorkspaceEvents.publish() }
     }
     /** History is indexed in the same workspace list; the original session archive is retained. */
     fun forSession(session: com.opc.baize.core.Session): WeWorkspace {
@@ -56,6 +56,7 @@ class WorkspaceFiles(private val context: Context) {
         require(name.isNotBlank() && name.length <= 80) { "请输入 1～80 个字的名称" }
         LearningTurn.write(File(workspace.container, "title.txt"), name.trim())
         File(workspace.container, "automatic-title.txt").delete()
+        WorkspaceEvents.publish()
     }
     data class State(val pinned: Boolean = false, val archived: Boolean = false, val trashedAt: Long = 0, val openedAt: Long = 0)
     fun state(workspace: WeWorkspace): State = synchronized(managementLock) {
@@ -79,6 +80,7 @@ class WorkspaceFiles(private val context: Context) {
         }
         LearningTurn.write(File(workspace.container, "management.json"), JSONObject().put("pinned", next.pinned)
             .put("archived", next.archived).put("trashedAt", next.trashedAt).put("openedAt", next.openedAt).toString())
+        WorkspaceEvents.publish()
     }
     fun updatedAt(workspace: WeWorkspace): Long = maxOf(state(workspace).openedAt,
         workspace.container.lastModified(), workspace.transcript.lastModified(),

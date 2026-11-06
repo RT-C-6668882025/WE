@@ -71,6 +71,7 @@ class PaperActivity : Activity() {
     private var chooseTool: (PaperInkView.Mode) -> Unit = {}
     private val readyListener: (String,java.io.File) -> Unit = { owner,pdf ->
         handler.post { if (!destroyed && workspaceId == owner) {
+            if (prefs.getString("paper_last_pdf_$owner",null) == pdf.canonicalPath) return@post
             readyPdf = pdf; generatedButton.visibility = android.view.View.VISIBLE
             status.text = "工作区有新生成的页面，可点击打开；当前笔迹保留。"
         } }
@@ -490,6 +491,7 @@ class PaperActivity : Activity() {
                     if(next.revision>ink.page.revision) ink.acceptExternal(next)
                 } catch(e:Exception) {status.text="画布同步失败，当前笔迹保留：${e.message}"}
             }
+            currentWorkspace()?.let { w -> WorkspaceDrawing.pending(w)?.let { readyListener(w.id,it) } }
             attachCanvas()
         }
     }
@@ -630,7 +632,8 @@ class PaperActivity : Activity() {
                     } finally { runtime.close(); studyRuntime = null }
                 }
                 if (stopped) return@launch
-                readyPdf = pdf; generatedButton.visibility = android.view.View.VISIBLE
+                if (prefs.getString("paper_last_pdf_$owner",null) == pdf.canonicalPath) return@post
+            readyPdf = pdf; generatedButton.visibility = android.view.View.VISIBLE
                 if (document == id && pageIndex == index && ink.page.revision == revision && interactionVersion == version) {
                     openGenerated(pdf, workspace.id, LearningTurn.sourcePath(pdf))
                 } else status.text = "新学习页已生成。你正在书写，点“查看生成页”再打开。"
