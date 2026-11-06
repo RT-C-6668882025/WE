@@ -412,10 +412,10 @@ class PaperActivity : Activity() {
         handler.removeCallbacks(recognizeLater)
         if (loading || document == null || submitting || studyJob?.isActive == true) return
         if (prefs.getString("model_provider", "anthropic") != "subscription") {
-            status.text = "图片批改请先在墨灵设置中启用 ChatGPT 订阅。原 API 适配器目前只支持文字。"; return
+            status.text = "图片批改请先在WE 设置中启用 ChatGPT 订阅。原 API 适配器目前只支持文字。"; return
         }
         val provider = SubscriptionSelection.provider(this, image = true)
-        if (!provider.isReady()) { status.text = "请返回墨灵设置登录 ChatGPT 并选择模型。"; return }
+        if (!provider.isReady()) { status.text = "请返回WE 设置登录 ChatGPT 并选择模型。"; return }
         val (bitmap, data, region) = ink.snapshot()
         val id = document!!; val index = pageIndex; val workspace = workspaceId; val interaction = interactionVersion
         val regionJson = JSONObject().put("left", region.left).put("top", region.top).put("right", region.right).put("bottom", region.bottom).toString()
@@ -512,38 +512,28 @@ class PaperActivity : Activity() {
     }
     private fun showInstructions() {
         AlertDialog.Builder(this).setTitle("指令 · 当前：${PaperPrompts.labels[command]}")
-            .setItems(PaperPrompts.labels + arrayOf("编辑当前预设","编辑系统提示词","编辑页面任务模板")) { _,which ->
+            .setItems(PaperPrompts.labels+arrayOf("编辑当前预设","编辑系统提示词","编辑页面任务模板")) {_,which->
                 when(which) {
-                    in 0..3 -> { command = which; instructionButton.text = "指令：${PaperPrompts.labels[which]}"; prefs.edit().putInt("paper_command",which).apply(); requestField.setText(PaperPrompts.read(this,which)) }
-                    6 -> {
-                        val w = workspaceId?.let { id -> WorkspaceFiles(this).list().find { it.id == id } }
-                        if (w != null) {
-                            val file = java.io.File(w.root,"memory/agent-prompt.txt")
-                            val editor = EditText(this).apply { minLines = 6; maxLines = 14; setText(if (file.isFile) file.readText() else LearningTurn.DEFAULT_TEMPLATE) }
-                            AlertDialog.Builder(this).setTitle("页面任务模板 · 当前工作区").setMessage("变量：{request} 需求、{source} 原材料、{origin} 来源、{output} 输出路径。")
-                                .setView(editor).setNegativeButton("取消",null)
-                                .setNeutralButton("恢复默认") { _,_ -> file.delete() }
-                                .setPositiveButton("保存") { _,_ ->
-                                    val text = editor.text.toString()
-                                    if (text.length <= 48000) LearningTurn.write(file,text) else status.text = "模板最多 48000 字"
-                                }.show()
+                    in 0..3->{command=which;instructionButton.text="指令：${PaperPrompts.labels[which]}";prefs.edit().putInt("paper_command",which).apply();requestField.setText(PaperPrompts.read(this,which))}
+                    6->{
+                        val workspace=currentWorkspace()
+                        if(workspace!=null) {
+                            val file=java.io.File(workspace.root,"memory/agent-prompt.txt")
+                            val editor=EditText(this).apply {minLines=4;maxLines=12;setText(if(file.isFile) file.readText() else LearningTurn.DEFAULT_TEMPLATE)}
+                            com.opc.baize.ui.WeUi.editDialog(this,"页面任务模板 · 当前工作区",editor,
+                                message="变量：{request} 需求、{source} 原材料、{origin} 来源、{output} 输出路径。",reset={file.delete()}) {text->
+                                require(text.length<=48000) {"模板最多 48000 字"};LearningTurn.write(file,text)
+                            }
                         }
                     }
-                    4,5 -> {
-                        val system = which == 5
-                        val editor = EditText(this).apply { minLines = 5; maxLines = 12; setText(if (system) PaperPrompts.system(this@PaperActivity) else PaperPrompts.read(this@PaperActivity,command)) }
-                        AlertDialog.Builder(this).setTitle(if (system) "系统提示词" else "${PaperPrompts.labels[command]} · 可修改")
-                            .setView(editor).setNegativeButton("取消",null)
-                            .setNeutralButton("恢复默认") { _,_ ->
-                                if (system) PaperPrompts.saveSystem(this,PaperPrompts.DEFAULT_SYSTEM)
-                                else { PaperPrompts.save(this,command,PaperPrompts.defaults[command]); requestField.setText(PaperPrompts.read(this,command)) }
-                            }
-                            .setPositiveButton("保存") { _,_ ->
-                                try {
-                                    if (system) PaperPrompts.saveSystem(this,editor.text.toString())
-                                    else { PaperPrompts.save(this,command,editor.text.toString()); requestField.setText(editor.text) }
-                                } catch (e: Exception) { status.text = e.message }
-                            }.show()
+                    4,5->{
+                        val system=which==5;val editing=command
+                        val editor=EditText(this).apply {minLines=4;maxLines=12;setText(if(system) PaperPrompts.system(this@PaperActivity) else PaperPrompts.read(this@PaperActivity,editing))}
+                        com.opc.baize.ui.WeUi.editDialog(this,if(system) "系统提示词" else "${PaperPrompts.labels[editing]} · 可修改",editor,
+                            reset={if(system) PaperPrompts.saveSystem(this,PaperPrompts.DEFAULT_SYSTEM) else {PaperPrompts.save(this,editing,PaperPrompts.defaults[editing]);requestField.setText(PaperPrompts.read(this,editing))}}) {text->
+                            require(text.length<=48000) {"提示词最多 48000 字"}
+                            if(system) PaperPrompts.saveSystem(this,text) else {PaperPrompts.save(this,editing,text);requestField.setText(text)}
+                        }
                     }
                 }
             }.show()

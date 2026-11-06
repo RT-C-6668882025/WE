@@ -30,6 +30,24 @@ object WeUi {
         },LinearLayout.LayoutParams(0,-2,1f))
     }
     private fun TextView.accessibilityHeadingCompat() {if(android.os.Build.VERSION.SDK_INT>=28) isAccessibilityHeading=true}
+    fun editDialog(activity:Activity,title:String,editor:EditText,message:String?=null,reset:(()->Unit)?=null,save:(String)->Unit) {
+        style(editor)
+        val builder=android.app.AlertDialog.Builder(activity).setTitle(title)
+            .setView(ScrollView(activity).apply {addView(editor)}).setNegativeButton("取消",null).setPositiveButton("保存",null)
+        if(message!=null) builder.setMessage(message)
+        if(reset!=null) builder.setNeutralButton("恢复默认",null)
+        val dialog=builder.create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {save(editor.text.toString());dialog.dismiss()} catch(e:Exception) {editor.error=e.message ?: "输入未保存，请检查后重试"}
+            }
+            if(reset!=null) dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                try {reset();dialog.dismiss()} catch(e:Exception) {editor.error=e.message ?: "恢复失败，请重试"}
+            }
+        }
+        dialog.show()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    }
     fun style(view:View) {
         val d={n:Int->dp(view.context,n)}
         when(view) {

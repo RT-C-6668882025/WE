@@ -292,12 +292,18 @@ class MainActivity : Activity() {
 
     // ---------- UI 构建（纯代码布局，最短渲染路径） ----------
 
+    private data class SettingsDraft(val provider:Int,val key:String,val endpoint:String,val model:String,val fallback:String)
+    private var captureSettingsDraft:(()->SettingsDraft)?=null
+    private var restoredSettingsDraft=false
+    @Deprecated("Keep uncommitted form values in memory during configuration changes")
+    override fun onRetainNonConfigurationInstance():Any?=if(homeTab==TAB_SETTINGS && settingsDirty) captureSettingsDraft?.invoke() else null
     private var settingsDirty=false
     private var saveSettings:(()->Boolean)?=null
     private var homeTab=0
     private lateinit var homeBody:FrameLayout
     private val homeTabs=mutableListOf<android.widget.Button>()
-    private fun showHomeTab(tab:Int) {
+    private fun showHomeTab(tab:Int,force:Boolean=false) {
+        if(::homeBody.isInitialized && homeBody.childCount>0 && tab==homeTab && !force) return
         if(homeTab==TAB_SETTINGS && tab!=TAB_SETTINGS && settingsDirty) {
             AlertDialog.Builder(this).setTitle("保存设置修改？").setMessage("当前修改尚未保存。")
                 .setNegativeButton("取消",null).setNeutralButton("放弃修改") {_,_->settingsDirty=false;showHomeTab(tab)}
@@ -1298,6 +1304,12 @@ class MainActivity : Activity() {
         col.addView(saveBtn, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
+        val retained=lastNonConfigurationInstance as? SettingsDraft
+        if(retained!=null && !restoredSettingsDraft) {
+            restoredSettingsDraft=true;providerChoices.setSelection(retained.provider)
+            keyEdit.setText(retained.key);endpointEdit.setText(retained.endpoint);modelEdit.setText(retained.model);fallbackEdit.setText(retained.fallback)
+        }
+        captureSettingsDraft={SettingsDraft(providerChoices.selectedItemPosition,keyEdit.text.toString(),endpointEdit.text.toString(),modelEdit.text.toString(),fallbackEdit.text.toString())}
         fun changed() {
             settingsDirty=keyEdit.text.toString().trim()!=(prefs.getString("api_key","") ?: "") ||
                 endpointEdit.text.toString().trim().ifEmpty {ModelConfig.DEFAULT_ENDPOINT}!=(prefs.getString("api_endpoint",ModelConfig.DEFAULT_ENDPOINT) ?: ModelConfig.DEFAULT_ENDPOINT) ||
@@ -1315,6 +1327,7 @@ class MainActivity : Activity() {
             override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long) {changed()}
             override fun onNothingSelected(parent:android.widget.AdapterView<*>?) {}
         }
+        changed()
         saveSettings={saveBtn.performClick();!settingsDirty}
         WeUi.style(col)
         return scrollPane(col)
@@ -1476,7 +1489,7 @@ class MainActivity : Activity() {
         return scrollPane(col)
     }
     private fun refreshWorkspaceList() {
-        if(panelDialog?.isShowing==true) showPanel(TAB_WORKSPACES) else showHomeTab(TAB_WORKSPACES)
+        if(panelDialog?.isShowing==true) showPanel(TAB_WORKSPACES) else showHomeTab(TAB_WORKSPACES,true)
     }
     private fun manageWorkspaces(workspaces: List<WeWorkspace>, action: String) {
         if (workspaces.isEmpty() || !canSwitchTask()) return

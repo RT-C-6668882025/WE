@@ -82,6 +82,7 @@ internal object McpWebPage {
     fun create(context:android.content.Context,bridge:McpPageBridge,client:McpWebPageClient=McpWebPageClient(context)):WebView = WebView(context).apply {
         settings.javaScriptEnabled=true
         settings.domStorageEnabled=true
+        settings.textZoom=(context.resources.configuration.fontScale*100).toInt().coerceIn(100,200)
         settings.allowFileAccess=false;settings.allowContentAccess=false
         settings.mixedContentMode=WebSettings.MIXED_CONTENT_NEVER_ALLOW
         addJavascriptInterface(bridge,"WeNative")

@@ -91,7 +91,7 @@ class AgentWorkspaceActivity : Activity() {
             setOnClickListener {
                 if(job?.isActive==true) {job?.cancel();output.append("\n已请求停止。")}
                 else if(openingPage) info.text="正在打开画布，请稍候…"
-                else {val text=input.text.toString().trim();if(text.isNotEmpty()) run(text)}
+                else {val text=input.text.toString().trim();if(text.isNotEmpty()) run(text) else input.error="请输入需求后发送"}
             }
         };composer.addView(stop,LinearLayout.LayoutParams(dp(64),dp(48)))
         root.addView(ScrollView(this).apply {addView(output)},LinearLayout.LayoutParams(-1,0,1f))
@@ -159,6 +159,7 @@ class AgentWorkspaceActivity : Activity() {
                     } }
                 }
                 resetRuntime()
+                if(input.text.toString().trim()==text) input.text.clear()
                 openPaper(pdf, true)
             } catch (e: CancellationException) { resetRuntime(); throw e }
             catch (e: Exception) { output.append("\n未完成：${e.message?.take(160) ?: e.javaClass.simpleName}"); resetRuntime() }

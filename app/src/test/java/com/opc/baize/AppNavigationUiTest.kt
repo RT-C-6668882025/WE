@@ -9,6 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowAlertDialog
@@ -30,6 +31,8 @@ class AppNavigationUiTest {
             all().filterIsInstance<Button>().single {it.text=="设置"}.performClick()
             val edit=all().filterIsInstance<EditText>().single {it.hint=="输入当前服务的 API 密钥"}
             val old=edit.text.toString();edit.setText(old+"draft")
+            all().filterIsInstance<Button>().single {it.text=="设置"}.performClick()
+            assertEquals(old+"draft",edit.text.toString())
             all().filterIsInstance<Button>().single {it.text=="工作区"}.performClick()
             var dialog=ShadowAlertDialog.getLatestAlertDialog();assertTrue(dialog.isShowing)
             dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick();shadowOf(Looper.getMainLooper()).idle()
@@ -54,4 +57,16 @@ class AppNavigationUiTest {
             dialog.dismiss();settings.dismiss()
         } finally {controller.pause().stop().destroy()}
     }
+    @Test fun invalidEditorInputRemainsAvailableForCorrection() {
+        val controller=Robolectric.buildActivity(android.app.Activity::class.java).create().start().resume().visible()
+        try {
+            val input=EditText(controller.get()).apply {setText("keep my text")}
+            com.opc.baize.ui.WeUi.editDialog(controller.get(),"编辑",input) {require(it.length<3) {"输入过长"}}
+            val dialog=ShadowAlertDialog.getLatestAlertDialog()
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick();shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(dialog.isShowing);assertEquals("keep my text",input.text.toString());assertEquals("输入过长",input.error.toString())
+            dialog.dismiss()
+        } finally {controller.pause().stop().destroy()}
+    }
+
 }

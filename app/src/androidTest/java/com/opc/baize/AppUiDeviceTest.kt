@@ -55,7 +55,7 @@ class AppUiDeviceTest {
                                     val values=android.content.ContentValues().apply {
                                         put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,"$name-$label-$font.png")
                                         put(android.provider.MediaStore.Images.Media.MIME_TYPE,"image/png")
-                                        put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,"Pictures/WE-CI")
+                                        if(android.os.Build.VERSION.SDK_INT>=29) put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,"Pictures/WE-CI")
                                     }
                                     val uri=requireNotNull(context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values))
                                     context.contentResolver.openOutputStream(uri)!!.use {assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,it))}
@@ -67,4 +67,23 @@ class AppUiDeviceTest {
             }
         } finally {scale(oldScale)}
     }
+    @Test fun connectionScreenHasBackNavigationAndAccessibleWebActions() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
+        val activity=instrumentation.startActivitySync(Intent(context,com.opc.baize.mcp.McpSettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as Activity
+        try {
+            val page=com.opc.baize.mcp.McpSettingsActivity::class.java.getDeclaredField("page").apply {isAccessible=true}.get(activity) as android.webkit.WebView
+            var ready=false;val deadline=android.os.SystemClock.elapsedRealtime()+15000
+            while(!ready && android.os.SystemClock.elapsedRealtime()<deadline) {
+                val result=java.util.concurrent.CompletableFuture<String>()
+                instrumentation.runOnMainSync {page.evaluateJavascript("Boolean(window.weConnection && [...document.querySelectorAll('button')].filter(b=>!b.hidden).every(b=>{const r=b.getBoundingClientRect();return r.height>=48 && r.width>=48 && r.right<=innerWidth+1;}))") {result.complete(it)}}
+                ready=result.get(3,java.util.concurrent.TimeUnit.SECONDS)=="true"
+                if(!ready) android.os.SystemClock.sleep(50)
+            }
+            assertTrue("Connection actions did not load or fit",ready)
+            instrumentation.runOnMainSync {
+                assertTrue(views(activity.window.decorView).filterIsInstance<Button>().any {it.text=="返回" && it.isShown})
+            }
+        } finally {instrumentation.runOnMainSync {activity.finish()}}
+    }
+
 }
