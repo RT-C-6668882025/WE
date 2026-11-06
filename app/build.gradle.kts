@@ -52,7 +52,7 @@ android {
     buildTypes {
         debug {
             // Isolate the subscription probe from an installed production Moling.
-            applicationIdSuffix = ".aipaper.persist32"
+            applicationIdSuffix = ".preview"
             versionNameSuffix = "-preview"
         }
         release {

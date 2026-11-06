@@ -306,8 +306,8 @@ class MainActivity : Activity() {
         if(::homeBody.isInitialized && homeBody.childCount>0 && tab==homeTab && !force) return
         if(homeTab==TAB_SETTINGS && tab!=TAB_SETTINGS && settingsDirty) {
             AlertDialog.Builder(this).setTitle("保存设置修改？").setMessage("当前修改尚未保存。")
-                .setNegativeButton("取消",null).setNeutralButton("放弃修改") {_,_->settingsDirty=false;showHomeTab(tab)}
-                .setPositiveButton("保存并离开") {_,_->if(saveSettings?.invoke()==true) showHomeTab(tab)}.show()
+                .setNegativeButton("取消",null).setNeutralButton("放弃") {_,_->settingsDirty=false;showHomeTab(tab)}
+                .setPositiveButton("保存") {_,_->if(saveSettings?.invoke()==true) showHomeTab(tab)}.show()
             return
         }
         homeTab=tab.coerceIn(0,2)

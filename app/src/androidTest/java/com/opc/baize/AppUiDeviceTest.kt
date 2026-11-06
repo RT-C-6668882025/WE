@@ -24,7 +24,13 @@ class AppUiDeviceTest {
         val oldScale=android.provider.Settings.System.getFloat(context.contentResolver,"font_scale",1f)
         fun scale(value:Float) {
             ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("settings put system font_scale $value")).use {it.readBytes()}
-            android.os.SystemClock.sleep(700)
+            val deadline=android.os.SystemClock.elapsedRealtime()+5000
+            var changed=false
+            while(!changed && android.os.SystemClock.elapsedRealtime()<deadline) {
+                instrumentation.runOnMainSync {changed=kotlin.math.abs(context.resources.configuration.fontScale-value)<.05f}
+                if(!changed) android.os.SystemClock.sleep(50)
+            }
+            assertTrue("System font scale was not applied",changed)
         }
         try {
             for(font in listOf(1f,1.3f)) {
