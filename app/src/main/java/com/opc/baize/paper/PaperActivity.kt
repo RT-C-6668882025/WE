@@ -72,6 +72,23 @@ class PaperActivity : Activity() {
     private lateinit var instructionButton: Button
     private var pendingExport: String? = null
     private var chooseTool: (PaperInkView.Mode) -> Unit = {}
+    private var refreshToolState: () -> Unit = {}
+    private lateinit var undoButton: Button
+    private lateinit var redoButton: Button
+    private var historyQuery = 0L
+    private fun refreshHistory() {
+        if (!::undoButton.isInitialized) return
+        undoButton.isEnabled=false; redoButton.isEnabled=false
+        val id=document ?: return
+        if(loading || !::saveQueue.isInitialized || !saveQueue.isIdle()) return
+        val index=pageIndex; val revision=ink.page.revision; val query=++historyQuery
+        io.execute {
+            val available=try {PaperRepository(applicationContext).historyAvailability(id,index)} catch(_:Exception) {false to false}
+            runOnUiThread {if(!destroyed && query==historyQuery && document==id && pageIndex==index && ink.page.revision==revision && !loading && saveQueue.isIdle()) {
+                undoButton.isEnabled=available.first; redoButton.isEnabled=available.second
+            }}
+        }
+    }
     private val readyListener: (String,java.io.File) -> Unit = { owner,pdf ->
         handler.post { if (!destroyed && workspaceId == owner) {
             if (prefs.getString("paper_last_pdf_$owner",null) == pdf.canonicalPath) return@post
@@ -89,28 +106,29 @@ class PaperActivity : Activity() {
         super.onCreate(state); pendingExport=state?.getString("drawing_export"); repository = PaperRepository(applicationContext)
         workspaceId = intent.getStringExtra("workspace")
         command = prefs.getInt("paper_command", 0).coerceIn(0,3)
-        var responsiveLayout:(Int)->Unit = {}
+        var responsiveLayout:(Int,Int)->Unit = {_,_->}
         val root=object:LinearLayout(this@PaperActivity) {
             override fun onMeasure(widthSpec:Int,heightSpec:Int) {
-                responsiveLayout(android.view.View.MeasureSpec.getSize(heightSpec))
+                responsiveLayout(android.view.View.MeasureSpec.getSize(widthSpec),android.view.View.MeasureSpec.getSize(heightSpec))
                 super.onMeasure(widthSpec,heightSpec)
             }
         }.apply {orientation=LinearLayout.VERTICAL}
         root.setBackgroundColor(Color.rgb(246,241,228))
         setContentView(root)
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        status = TextView(this).apply { text = "手动识别 · 双指移动与缩放 · 笔迹自动保存"; textSize = 13f }
+        status = TextView(this).apply { text = "手动识别 · 双指移动与缩放 · 笔迹自动保存"; textSize = 12f; maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END; setTextColor(Color.rgb(105,96,78)) }
         fun row() = LinearLayout(this).also { root.addView(it) }
         fun button(row: LinearLayout, text: String, call: () -> Unit) = Button(this).apply {
             this.text = text; textSize = 13f; isAllCaps = false
-            minWidth = 0; minimumWidth = 0; minHeight = dp(48); minimumHeight = dp(48)
+            minWidth = dp(48); minimumWidth = dp(48); minHeight = dp(48); minimumHeight = dp(48)
             maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;contentDescription=text
-            background=android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.rgb(246,241,228));cornerRadius=dp(8).toFloat();setStroke(dp(1),Color.rgb(221,213,195))
-            }
-            setTextColor(Color.rgb(58,53,44)); setPadding(dp(12),0,dp(12),0)
+            val states=arrayOf(intArrayOf(-android.R.attr.state_enabled),intArrayOf())
+            setTextColor(android.content.res.ColorStateList(states,intArrayOf(Color.rgb(128,119,101),Color.rgb(58,53,44))))
+            background=CanvasControlStyle.background(this@PaperActivity)
+            setPadding(dp(4),0,dp(4),0)
+            tooltipText=text
             setOnClickListener { call() }
-            row.addView(this, LinearLayout.LayoutParams(-2, -2))
+            row.addView(this, LinearLayout.LayoutParams(-2, dp(48)))
         }
         ink = PaperInkView(this)
         ink.stylusOnly = prefs.getBoolean("paper_stylus_only", false)
@@ -119,7 +137,7 @@ class PaperActivity : Activity() {
             val id=document
             if(id!=null && !loading && ink.canAcceptExternal && (!::saveQueue.isInitialized || saveQueue.isIdle())) try {
                 val next=PaperRepository(this).history(id,pageIndex,ink.page.width,ink.page.height,ink.page.revision,redo)
-                ink.acceptExternal(next); interactionVersion++
+                ink.acceptExternal(next); refreshHistory(); interactionVersion++
                 status.text=if(redo) "已重做" else "已撤销"
             } catch(e:Exception) { status.text="暂未撤销／重做：${e.message}" }
         }
@@ -130,14 +148,14 @@ class PaperActivity : Activity() {
             text = workspaceName; textSize = 17f; setTextColor(Color.rgb(58,53,44))
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         },LinearLayout.LayoutParams(0,-2,1f))
-        val compactUndo=button(top,"撤销") {if(canEditCanvas()) ink.undo()}.apply {visibility=android.view.View.GONE}
-        val compactRedo=button(top,"重做") {if(canEditCanvas()) ink.redo()}.apply {visibility=android.view.View.GONE}
+        undoButton=button(top,"撤销") {if(canEditCanvas()) ink.undo()}.apply {isEnabled=false}
+        redoButton=button(top,"重做") {if(canEditCanvas()) ink.redo()}.apply {isEnabled=false}
         button(top,"页面") { showWorkspacePages() }
         button(top,"菜单") { showCanvasMenu() }
         val navigation = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
         previousPage = button(navigation,"上一页") { if (!loading && pageIndex > 0) document?.let { load(it,pageIndex-1) } }.apply { visibility = android.view.View.GONE }
         pageLabel = TextView(this).apply {
-            text = "笔迹自动保存"; textSize = 12f; setTextColor(Color.rgb(163,154,135)); setPadding(dp(16),0,dp(16),0)
+            text = "笔迹自动保存"; textSize = 12f; setTextColor(Color.rgb(105,96,78)); setPadding(dp(16),0,dp(16),0)
         }; navigation.addView(pageLabel,LinearLayout.LayoutParams(0,-2,1f))
         nextPage = button(navigation,"下一页") { if (!loading && pageIndex+1 < pageCount) document?.let { load(it,pageIndex+1) } }.apply { visibility = android.view.View.GONE }
         val tools = row().apply {gravity=android.view.Gravity.CENTER_VERTICAL;setPadding(dp(6),dp(2),dp(6),dp(2))}
@@ -147,13 +165,23 @@ class PaperActivity : Activity() {
         }.apply {textSize=12f}
         navigation.removeView(modeButton);navigation.addView(modeButton,0,LinearLayout.LayoutParams(dp(90),-2))
         val modes = mutableMapOf<PaperInkView.Mode,Button>()
-        chooseTool = { mode ->
-            interactionVersion++; handler.removeCallbacks(recognizeLater); ink.mode = mode
+        refreshToolState = {
             modes.forEach { (key,value) ->
-                value.text=when(key) {PaperInkView.Mode.WRITE->"画笔";PaperInkView.Mode.ERASE->"橡皮";else->"框选"}
-                value.isSelected=key==mode
-                value.backgroundTintList = android.content.res.ColorStateList.valueOf(if (key == mode) Color.rgb(216,207,184) else Color.rgb(246,241,228))
+                val label=when(key) {
+                    PaperInkView.Mode.WRITE -> when(ink.drawingTool) {
+                        "line"->"直线";"rectangle"->"矩形";"ellipse"->"椭圆";"fill"->"填充";"eyedropper"->"吸管";else->"画笔"
+                    }
+                    PaperInkView.Mode.ERASE -> if(ink.pixelEraser) "局部擦" else "整笔擦"
+                    else -> "框选"
+                }
+                value.text=label;value.isSelected=key==ink.mode
+                value.contentDescription=if(android.os.Build.VERSION.SDK_INT>=30) when(key) {PaperInkView.Mode.WRITE->"画笔";PaperInkView.Mode.ERASE->"橡皮";else->"框选"} else "$label，${if(key==ink.mode) "已选中" else "未选中"}"
+                if(android.os.Build.VERSION.SDK_INT>=30) value.stateDescription=if(key==ink.mode) "已选中：$label" else "未选中"
+                value.tooltipText=if(key==PaperInkView.Mode.ERASE) "$label · 长按切换橡皮类型" else "$label · 长按打开绘画工具"
             }
+        }
+        chooseTool = { mode ->
+            interactionVersion++; handler.removeCallbacks(recognizeLater); ink.mode=mode;refreshToolState()
         }
         modes[PaperInkView.Mode.WRITE] = button(tools,"画笔") { ink.drawingTool="freehand";chooseTool(PaperInkView.Mode.WRITE) }
         modes[PaperInkView.Mode.SELECT] = button(tools,"框选") {
@@ -163,21 +191,27 @@ class PaperActivity : Activity() {
         modes[PaperInkView.Mode.ERASE] = button(tools,"橡皮") { chooseTool(PaperInkView.Mode.ERASE); status.text = if(ink.pixelEraser) "局部橡皮：仅擦除当前图层，可撤销。" else "整笔橡皮：仅擦除当前图层，可撤销。" }
         button(tools,"笔刷") { if(canEditCanvas()) showBrushPanel() }
         button(tools,"图层") { if(canEditCanvas()) drawingPanels().layers() }
-        val actions=row().apply {setPadding(dp(6),0,dp(6),dp(2))}
-        button(actions,"撤销") { if(canEditCanvas()) ink.undo() }
-        button(actions,"重做") { if(canEditCanvas()) ink.redo() }
-        button(actions,"添加") { if(canEditCanvas()) drawingPanels().addObjects() }
-        button(actions,"居中") { ink.resetView() }
-        button(actions,"更多") { if(canEditCanvas()) drawingPanels().tools() }
-        for(strip in listOf(tools,actions)) for(i in 0 until strip.childCount) {
-            (strip.getChildAt(i) as Button).apply {textSize=12f;setPadding(dp(4),0,dp(4),0)}
-            strip.getChildAt(i).layoutParams=LinearLayout.LayoutParams(0,-2,1f).apply {setMargins(dp(2),0,dp(2),0)}
+        modes[PaperInkView.Mode.WRITE]?.setOnLongClickListener {if(canEditCanvas()) drawingPanels().tools();true}
+        modes[PaperInkView.Mode.ERASE]?.setOnLongClickListener {
+            AlertDialog.Builder(this).setTitle("橡皮类型").setSingleChoiceItems(arrayOf("局部橡皮","整笔橡皮"),if(ink.pixelEraser) 0 else 1) {dialog,which ->
+                ink.pixelEraser=which==0;chooseTool(PaperInkView.Mode.ERASE);dialog.dismiss()
+            }.show();true
+        }
+        for(i in 0 until tools.childCount) {
+            (tools.getChildAt(i) as Button).apply {textSize=12f;setPadding(dp(2),0,dp(2),0)}
+            tools.getChildAt(i).layoutParams=LinearLayout.LayoutParams(0,dp(48),1f)
         }
         chooseTool(PaperInkView.Mode.WRITE)
-        root.addView(ink, LinearLayout.LayoutParams(-1,0,1f))
+        // Drawpile's canvas-first arrangement: one mobile strip, a narrow dock on wide windows.
+        root.removeView(tools)
+        val toolScroll=ScrollView(this).apply {isFillViewport=false;addView(tools)}
+        val canvasBody=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
+        canvasBody.addView(ink,LinearLayout.LayoutParams(0,-1,1f))
+        root.addView(canvasBody,LinearLayout.LayoutParams(-1,0,1f))
+        root.addView(toolScroll,root.indexOfChild(canvasBody),LinearLayout.LayoutParams(-1,dp(56)))
         ink.toolFeedback = {
             if (it.startsWith("已取消框选")) scopeChoice.setSelection(0)
-            status.text = it
+            refreshToolState();status.text=it
         }
         ink.changed = { data ->
             handler.removeCallbacks(recognizeLater)
@@ -193,7 +227,7 @@ class PaperActivity : Activity() {
         }; controls.addView(scopeChoice,LinearLayout.LayoutParams(0,-2,1f))
         instructionButton = button(controls,"指令：${PaperPrompts.labels[command]}") { showInstructions() }
         autoContinueSwitch = Switch(this).apply {
-            text = "自动识别"; isChecked = false
+            text = "自动识别"; isChecked = false; minHeight=dp(48)
             setOnCheckedChangeListener { _,enabled ->
                 autoRecognize = enabled; interactionVersion++; this@PaperActivity.handler.removeCallbacks(recognizeLater)
                 status.text = if (enabled) "自动识别已开启；停笔后按当前范围和指令处理。" else "手动模式：按需点击发送。"
@@ -202,10 +236,13 @@ class PaperActivity : Activity() {
         val aiOptions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
         root.removeView(controls); controls.visibility = android.view.View.VISIBLE
         aiOptions.addView(controls); aiOptions.addView(autoContinueSwitch)
-        root.addView(aiOptions)
+        // AI options live in a modal panel, leaving the canvas height stable.
         val requestRow = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
         button(requestRow,"AI ▾") {
-            aiOptions.visibility = if (aiOptions.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE
+            (aiOptions.parent as? android.view.ViewGroup)?.removeView(aiOptions)
+            aiOptions.visibility=android.view.View.VISIBLE
+            AlertDialog.Builder(this).setTitle("AI 发送设置").setView(ScrollView(this).apply {addView(aiOptions)})
+                .setPositiveButton("完成",null).show()
         }
         requestField = EditText(this).apply { hint = "告诉 AI 要做什么"; textSize = 16f; maxLines = 3 }
         requestRow.addView(requestField,LinearLayout.LayoutParams(0,-2,1f))
@@ -221,29 +258,43 @@ class PaperActivity : Activity() {
             }
         }; root.addView(generatedButton)
         val saveRow=row().apply {gravity=android.view.Gravity.CENTER_VERTICAL;setPadding(dp(12),0,dp(12),0)}
-        saveLabel=TextView(this).apply {text="自动保存";textSize=12f;setTextColor(Color.rgb(120,111,92))}
+        saveLabel=TextView(this).apply {text="自动保存";textSize=12f;setTextColor(Color.rgb(105,96,78))}
         saveRow.addView(saveLabel,LinearLayout.LayoutParams(0,-2,1f))
         retrySave=button(saveRow,"重试保存") {saveQueue.retry()}.apply {visibility=android.view.View.GONE}
-        status.setPadding(dp(12),dp(2),dp(12),dp(6));root.addView(status)
+        status.setPadding(dp(12),dp(2),dp(12),dp(6));status.accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE;root.addView(status)
         val retained=lastNonConfigurationInstance as? RetainedCanvas
         val store=repository
         saveQueue=retained?.saves ?: CanvasSaveQueue(io,{id,index,data -> store.save(id,index,data)},{})
         saveQueue.observe {state ->
             runOnUiThread {if(!destroyed) {
+                saveRow.visibility=if(state.error!=null) android.view.View.VISIBLE else android.view.View.GONE
+                refreshHistory()
                 saveLabel.text=when {state.error!=null->"保存失败 · 笔迹仍保留在当前画布";state.pending>0->"正在保存…";else->"已保存"}
                 retrySave.visibility=if(state.error!=null) android.view.View.VISIBLE else android.view.View.GONE
                 ink.isEnabled=!loading && state.error==null
                 if(state.error!=null) status.text="请重试保存后再翻页或退出。"
             }}
         }
-        responsiveLayout={height ->
-            val compact=height in 1 until dp(480)
-            compactUndo.visibility=if(compact) android.view.View.VISIBLE else android.view.View.GONE
-            compactRedo.visibility=compactUndo.visibility
-            val actionVisibility=if(compact) android.view.View.GONE else android.view.View.VISIBLE
-            if(actions.visibility!=actionVisibility) actions.visibility=actionVisibility
-            val navigationVisibility=if(compact && pageCount<=1) android.view.View.GONE else android.view.View.VISIBLE
-            if(navigation.visibility!=navigationVisibility) navigation.visibility=navigationVisibility
+        var docked=false
+        responsiveLayout={width,height ->
+            val wide=width>=dp(600)
+            if(docked!=wide) {
+                (toolScroll.parent as? android.view.ViewGroup)?.removeView(toolScroll)
+                tools.orientation=if(wide) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+                tools.setPadding(dp(4),if(wide) 0 else dp(4),dp(4),if(wide) 0 else dp(4))
+                for(i in 0 until tools.childCount) tools.getChildAt(i).layoutParams=
+                    if(wide) LinearLayout.LayoutParams(-1,dp(48)) else LinearLayout.LayoutParams(0,dp(48),1f)
+                if(wide) canvasBody.addView(toolScroll,0,LinearLayout.LayoutParams(dp(64),-1))
+                else root.addView(toolScroll,root.indexOfChild(canvasBody),LinearLayout.LayoutParams(-1,dp(56)))
+                docked=wide
+            }
+            navigation.visibility=if(pageCount>1) android.view.View.VISIBLE else android.view.View.GONE
+            // Keyboard/short windows keep the canvas and primary task; options stay accessible on demand.
+            toolScroll.visibility=if(height<dp(280)) android.view.View.GONE else android.view.View.VISIBLE
+        }
+        if(state!=null) {
+            requestField.setText(state.getString("canvas_request",""))
+            scopeChoice.setSelection(state.getInt("canvas_scope",0).coerceIn(0,2))
         }
         WorkspacePageEvents.subscribe(readyListener)
         val generated = intent.getStringExtra("generatedPdf")
@@ -346,7 +397,7 @@ class PaperActivity : Activity() {
                     nextPage.visibility = previousPage.visibility
                     previousPage.isEnabled = index > 0; nextPage.isEnabled = index+1 < count
                     prefs.edit().putString("paper_last_document_${workspaceId.orEmpty()}", id).putInt("paper_last_page_${workspaceId.orEmpty()}",index).apply()
-                    ink.load(result.first,latest);loading=false;ink.isEnabled=saveQueue.state().error==null;attachCanvas()
+                    ink.load(result.first,latest);loading=false;ink.isEnabled=saveQueue.state().error==null;attachCanvas();refreshHistory()
                     pageLabel.text = "第 ${index + 1} / $count 页"
                     prefs.edit().putString("paper_last_document", id).putInt("paper_last_page", index).apply()
                     status.text = if (autoRecognize) "写下答案或修改要求，停笔后自动继续。" else "已恢复笔迹。可离线书写。"
@@ -502,14 +553,15 @@ class PaperActivity : Activity() {
     },setTool={chooseTool(it)})
     private fun showBrushPanel() {
         if(ink.brushEngine==DrawdanceBrush.ENGINE) {drawingPanels().brushes();return}
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24,12,24,12) }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16),dp(8),dp(16),dp(8)) }
         val colors = intArrayOf(Color.BLACK,Color.rgb(25,85,175),Color.rgb(190,40,40),Color.rgb(35,125,75))
         val color = Spinner(this).apply {
+            contentDescription="笔迹颜色";minimumHeight=dp(48)
             adapter = ArrayAdapter(this@PaperActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("黑","蓝","红","绿"))
             setSelection(colors.indexOf(ink.penColor).coerceAtLeast(0))
         }; box.addView(color)
         val label = TextView(this); box.addView(label)
-        val size = SeekBar(this).apply { max = 190; progress = (ink.penWidth*10-10).toInt().coerceIn(0,190) }; box.addView(size)
+        val size = SeekBar(this).apply { contentDescription="笔迹粗细";minimumHeight=dp(48);max = 190; progress = (ink.penWidth*10-10).toInt().coerceIn(0,190) }; box.addView(size)
         fun describe() { label.text = "粗细：${(size.progress+10)/10f}" }; describe()
         size.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?,value: Int,fromUser: Boolean) { describe() }
@@ -523,6 +575,7 @@ class PaperActivity : Activity() {
         }.show()
     }
     private fun attachCanvas() {
+        refreshToolState();refreshHistory()
         val id=document ?: return; val owner=workspaceId ?: return
         if(loading || destroyed || !hasWindowFocus()) return
         val index=pageIndex
@@ -534,7 +587,7 @@ class PaperActivity : Activity() {
         },{ expected,change ->
             require(!loading && document==id && pageIndex==index && ink.canAcceptExternal && ink.page.revision==expected) { "Canvas is busy or revision changed; read again" }
             val next=change(ink.page)
-            ink.acceptExternal(next); interactionVersion++; handler.removeCallbacks(recognizeLater)
+            ink.acceptExternal(next); refreshHistory(); interactionVersion++; handler.removeCallbacks(recognizeLater)
             status.text="AI 已更新当前画布 · 版本 ${next.revision}"
             next
         }))
@@ -607,29 +660,37 @@ class PaperActivity : Activity() {
     }
 
     private fun showCanvasMenu() {
-        AlertDialog.Builder(this).setTitle("画布菜单")
-            .setItems(arrayOf("居中显示","修改生成内容","画布设置","导出图片","工作区对话","AI 模型设置","操作说明","笔刷预设","绘画工具","添加内容")) { _,which ->
-                when(which) {
-                    0 -> ink.resetView()
-                    1 -> editGeneratedContent()
-                    2 -> {
-                        val toggle = Switch(this).apply { text = "仅笔写画（双指仍可导航）"; isChecked = ink.stylusOnly }
-                        AlertDialog.Builder(this).setTitle("画布设置").setView(toggle).setNegativeButton("取消",null).setPositiveButton("保存") { _,_ ->
-                            ink.stylusOnly = toggle.isChecked; prefs.edit().putBoolean("paper_stylus_only",toggle.isChecked).apply()
-                        }.show()
-                    }
-                    3 -> AlertDialog.Builder(this).setTitle("导出图片")
-                        .setItems(arrayOf("PNG","透明 PNG")) { _,index -> if (!loading) exportDrawing(index == 1) }.show()
-                    4 -> workspaceId?.let { startActivity(Intent(this,AgentWorkspaceActivity::class.java).putExtra("workspace",it)) }
-                    5 -> startActivity(Intent(this,com.opc.baize.MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openSettings",true))
-                    8 -> if(canEditCanvas()) drawingPanels().tools()
-                    9 -> if(canEditCanvas()) drawingPanels().addObjects()
-                    7 -> AlertDialog.Builder(this).setTitle("笔刷预设").setItems(arrayOf("手写笔","绘画笔")) {_,index -> setInputMode(index==1)}.show()
-                    6 -> AlertDialog.Builder(this).setTitle("操作说明").setMessage("一个工作区保存手写、绘画、PDF 和 AI 生成页。\n手写笔／绘画笔只切换笔刷预设，当前页面和笔迹保留。\n双指拖动与缩放；菜单中可居中显示。常用工具固定显示，更多工具从“更多”打开。\n页面入口可新建、导入和切换；笔迹自动保存。\n框选后发送会使用选区；再次点击框选取消。\nAI 按钮展开范围、指令与自动识别；默认手动发送。运行中“发送”切换为“停止”。\n新生成页通过底部入口打开，保留当前笔迹。")
-                        .setPositiveButton("关闭",null).show()
+        fun options(title:String,labels:Array<String>,action:(Int)->Unit) {
+            AlertDialog.Builder(this).setTitle(title).setItems(labels) {_,index->action(index)}.setNegativeButton("关闭",null).show()
+        }
+        options("画布菜单",arrayOf("绘画工具","添加内容","视图与笔刷","文件与画布","AI 与工作区","操作说明","状态详情")) {section->
+            when(section) {
+                0->if(canEditCanvas()) drawingPanels().tools()
+                1->if(canEditCanvas()) drawingPanels().addObjects()
+                2->options("视图与笔刷",arrayOf("居中显示","手写笔预设","绘画笔预设")) {index->
+                    when(index) {0->ink.resetView();1->setInputMode(false);2->setInputMode(true)}
                 }
-            }.show()
+                3->options("文件与画布",arrayOf("修改生成内容","导出 PNG","导出透明 PNG","输入设置")) {index->
+                    when(index) {
+                        0->editGeneratedContent()
+                        1,2->if(!loading) exportDrawing(index==2)
+                        3->{
+                            val toggle=Switch(this).apply {text="仅笔写画（双指仍可导航）";isChecked=ink.stylusOnly;minHeight=dp(48)}
+                            AlertDialog.Builder(this).setTitle("输入设置").setView(toggle).setNegativeButton("取消",null).setPositiveButton("保存") {_,_->
+                                ink.stylusOnly=toggle.isChecked;prefs.edit().putBoolean("paper_stylus_only",toggle.isChecked).apply()
+                            }.show()
+                        }
+                    }
+                }
+                4->options("AI 与工作区",arrayOf("工作区对话","AI 模型设置")) {index->
+                    if(index==0) workspaceId?.let {startActivity(Intent(this,AgentWorkspaceActivity::class.java).putExtra("workspace",it))}
+                    else startActivity(Intent(this,com.opc.baize.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openSettings",true))
+                }
+                5->AlertDialog.Builder(this).setTitle("操作说明").setMessage("双指移动与缩放，菜单可居中显示。\n单指使用当前工具；按钮显示选中的形状或橡皮类型。长按画笔打开工具，长按橡皮切换类型。\n顶部撤销／重做；页面入口新建、导入、切换。\n笔刷预设在菜单的“视图与笔刷”；图层面板管理显示和锁定。\n再次点击框选取消选区。\nAI 按钮设置范围、指令和自动识别；发送后可停止。\n笔迹自动保存；失败时保留页面，重试后再退出。")
+                    .setPositiveButton("关闭",null).show()
+                6->AlertDialog.Builder(this).setTitle("当前状态").setMessage(saveLabel.text.toString()+"\n"+status.text).setPositiveButton("关闭",null).show()
+            }
+        }
     }
     private fun exportDrawing(transparent: Boolean) {
         try {
@@ -645,7 +706,7 @@ class PaperActivity : Activity() {
     @Deprecated("Platform configuration retention")
     override fun onRetainNonConfigurationInstance():Any? = if(::saveQueue.isInitialized) RetainedCanvas(saveQueue,document,pageIndex) else null
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString("drawing_export",pendingExport);super.onSaveInstanceState(outState)
+        outState.putString("drawing_export",pendingExport);outState.putString("canvas_request",requestField.text.toString());outState.putInt("canvas_scope",scopeChoice.selectedItemPosition);super.onSaveInstanceState(outState)
     }
     private fun editGeneratedContent() {
         if (loading || submitting || studyJob?.isActive == true) { status.text = "请等待当前操作完成后修改内容。"; return }

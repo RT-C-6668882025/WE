@@ -22,7 +22,7 @@ class McpDeviceTest {
                 instrumentation.runOnMainSync {
                     val views = all(opened.window.decorView)
                     ready = views.filterIsInstance<com.opc.baize.paper.PaperInkView>().any { it.isEnabled && it.page.width == 600 } &&
-                        views.filterIsInstance<android.widget.Switch>().any { it.text.toString() == "自动识别" && !it.isChecked }
+                        !com.opc.baize.paper.PaperActivity::class.java.getDeclaredField("autoRecognize").apply {isAccessible=true}.getBoolean(opened)
                 }
                 if (!ready) android.os.SystemClock.sleep(25)
             }

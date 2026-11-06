@@ -25,13 +25,16 @@ class PaperToolbarTest {
             assertFalse(visible.contains("指令：识别"))
             val options = all.filterIsInstance<Button>().single { it.text == "AI ▾" }
             options.performClick()
-            assertTrue(all.filterIsInstance<Switch>().single { it.text == "自动识别" }.isShown)
-            options.performClick()
-            assertFalse(all.filterIsInstance<Switch>().single { it.text == "自动识别" }.isShown)
-            for (removed in listOf("缩小","放大","导入 PDF","局部批改","选区解释","批改记录","查看生成页","停止","上一页","下一页")) assertFalse(removed,visible.contains(removed))
-            assertFalse(all.filterIsInstance<Switch>().single { it.text == "自动识别" }.isChecked)
-            val scope = all.filterIsInstance<Spinner>().single()
+            val panel=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+            val panelViews=views(panel.window!!.decorView)
+            val auto=panelViews.filterIsInstance<Switch>().single {it.text=="自动识别"}
+            assertTrue(auto.isShown);assertFalse(auto.isChecked)
+            val scope=panelViews.filterIsInstance<Spinner>().single()
             assertEquals("整页",scope.selectedItem)
+            panel.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertFalse(panel.isShowing)
+            for(removed in listOf("缩小","放大","导入 PDF","局部批改","选区解释","批改记录","查看生成页","停止","上一页","下一页")) assertFalse(removed,visible.contains(removed))
             val selection = all.filterIsInstance<Button>().single { it.text.toString().endsWith("框选") }
             selection.performClick(); assertEquals("选区",scope.selectedItem)
             selection.performClick(); assertEquals("整页",scope.selectedItem)
@@ -82,9 +85,37 @@ class PaperToolbarTest {
             PaperActivity::class.java.getDeclaredMethod("showCanvasMenu").apply {isAccessible=true}.invoke(controller.get())
             val dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
             val labels=(0 until dialog.listView.adapter.count).map {dialog.listView.adapter.getItem(it).toString()}
-            assertTrue(labels.contains("绘画工具"));assertTrue(labels.contains("添加内容"));assertTrue(labels.contains("笔刷预设"))
+            assertTrue(labels.contains("绘画工具"));assertTrue(labels.contains("添加内容"));assertTrue(labels.contains("视图与笔刷"))
             dialog.dismiss()
         } finally {controller.pause().stop().destroy()}
+    }
+
+    @Test @Config(sdk=[26]) fun selectedShapeAndEraserAreNamedOnSupportedOldAndroid() {
+        val controller=Robolectric.buildActivity(PaperActivity::class.java).create().start().resume().visible()
+        try {
+            val activity=controller.get();val all=views(activity.window.decorView)
+            val ink=all.filterIsInstance<PaperInkView>().single()
+            ink.drawingTool="line"
+            val choose=PaperActivity::class.java.getDeclaredField("chooseTool").apply {isAccessible=true}.get(activity) as (PaperInkView.Mode)->Unit
+            choose(PaperInkView.Mode.WRITE)
+            assertTrue(all.filterIsInstance<Button>().single {it.text=="直线"}.isSelected)
+            ink.pixelEraser=true;choose(PaperInkView.Mode.ERASE)
+            assertTrue(all.filterIsInstance<Button>().single {it.text=="局部擦"}.isSelected)
+        } finally {controller.pause().stop().destroy()}
+    }
+    @Test fun aiRequestAndScopeSurviveActivityRecreation() {
+        val first=Robolectric.buildActivity(PaperActivity::class.java).create().start().resume().visible()
+        val state=android.os.Bundle()
+        val input=PaperActivity::class.java.getDeclaredField("requestField").apply {isAccessible=true}
+        val scope=PaperActivity::class.java.getDeclaredField("scopeChoice").apply {isAccessible=true}
+        (input.get(first.get()) as EditText).setText("保留我的请求")
+        (scope.get(first.get()) as Spinner).setSelection(2)
+        first.saveInstanceState(state).pause().stop().destroy()
+        val second=Robolectric.buildActivity(PaperActivity::class.java).create(state).start().resume().visible()
+        try {
+            assertEquals("保留我的请求",(input.get(second.get()) as EditText).text.toString())
+            assertEquals(2,(scope.get(second.get()) as Spinner).selectedItemPosition)
+        } finally {second.pause().stop().destroy()}
     }
 
 }

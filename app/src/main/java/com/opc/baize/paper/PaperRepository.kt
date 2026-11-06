@@ -74,6 +74,11 @@ class PaperRepository(context: Context) : PaperStore {
         require(next.width==old.width && next.height==old.height)
         val checked=PaperPage.decode(next.encode()); commit(id,page,old,checked); checked
     }
+    fun historyAvailability(id:String,page:Int): Pair<Boolean,Boolean> = synchronized(lock) {
+        val saved=state(id,page)
+        (saved.optJSONArray("undo")?.length()?.let {it>0} ?: false) to
+            (saved.optJSONArray("redo")?.length()?.let {it>0} ?: false)
+    }
     fun history(id:String,page:Int,width:Int,height:Int,expected:Long,redo:Boolean): PaperPage = synchronized(lock) {
         val old=load(id,page,width,height); require(old.revision==expected) { "Revision conflict; read canvas again" }
         val saved=state(id,page); val from=saved.optJSONArray(if(redo) "redo" else "undo") ?: org.json.JSONArray()
