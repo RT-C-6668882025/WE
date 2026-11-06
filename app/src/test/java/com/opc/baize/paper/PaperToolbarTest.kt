@@ -32,6 +32,7 @@ class PaperToolbarTest {
             val scope=panelViews.filterIsInstance<Spinner>().single()
             assertEquals("整页",scope.selectedItem)
             panel.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertFalse(panel.isShowing)
             for(removed in listOf("缩小","放大","导入 PDF","局部批改","选区解释","批改记录","查看生成页","停止","上一页","下一页")) assertFalse(removed,visible.contains(removed))
             val selection = all.filterIsInstance<Button>().single { it.text.toString().endsWith("框选") }
