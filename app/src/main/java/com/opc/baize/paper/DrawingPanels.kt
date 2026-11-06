@@ -130,7 +130,7 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
         }.setNegativeButton("取消",null).show()
     }
     fun tools() {
-        val labels=arrayOf("自由画笔","直线","矩形","椭圆","填充当前图层","吸管取色","局部橡皮","整笔橡皮","重做","移动／复制／删除选区","添加文字","导入图片","添加矢量图","编辑文字／矢量对象")
+        val labels=arrayOf("自由画笔","直线","矩形","椭圆","填充当前图层","吸管取色","局部橡皮","整笔橡皮","重做","移动／复制／删除选区","添加文字","导入图片","添加矢量图","编辑文字／矢量对象","撤销")
         AlertDialog.Builder(activity).setTitle("绘画工具").setItems(labels) {_,i ->
             if(i<=5) {ink.drawingTool=listOf("freehand","line","rectangle","ellipse","fill","eyedropper")[i];ink.brushEngine=DrawdanceBrush.ENGINE;write()}
             if(i==6 || i==7) {ink.pixelEraser=i==6;setTool(PaperInkView.Mode.ERASE)}
@@ -140,6 +140,7 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
             if(i==11) importImage()
             if(i==12) artwork("svg")
             if(i==13) editObjects()
+            if(i==14) ink.undo()
         }.setNegativeButton("关闭",null).show()
     }
     private fun artwork(type:String,index:Int?=null) {
