@@ -7,9 +7,9 @@ import android.widget.*
 
 /** Drawing controls stay in panels so the paper keeps its space. */
 class DrawingPanels(private val activity: Activity,private val ink: PaperInkView,private val write: ()->Unit,private val importImage: ()->Unit = {},private val setTool:(PaperInkView.Mode)->Unit = {ink.mode=it}) {
-    private fun box()=LinearLayout(activity).apply {orientation=LinearLayout.VERTICAL;setPadding(24,12,24,12)}
+    private fun box()=LinearLayout(activity).apply {orientation=LinearLayout.VERTICAL;setPadding(16.dp(),8.dp(),16.dp(),8.dp())}
     private fun button(box: LinearLayout,label: String,action: ()->Unit) {
-        box.addView(Button(activity).apply {text=label;setOnClickListener {action()}})
+        box.addView(Button(activity).apply {text=label;isAllCaps=false;minHeight=48.dp();setOnClickListener {action()}})
     }
     private fun spinner(box: LinearLayout,label: String,items: List<String>,selected: Int): Spinner {
         box.addView(TextView(activity).apply {text=label})
@@ -72,7 +72,7 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
         for(layer in page.layers.asReversed()) {
             val row=LinearLayout(activity);box.addView(row)
             row.addView(Button(activity).apply {
-                text=(if(layer.id==page.activeLayerId) "✓ " else "")+layer.name;isAllCaps=false;maxLines=2;minHeight=48
+                text=(if(layer.id==page.activeLayerId) "✓ " else "")+layer.name;isAllCaps=false;maxLines=2;minHeight=48.dp()
                 contentDescription="选择图层 ${layer.name}"
                 setOnClickListener {action {ink.selectLayer(layer.id)}}
             },LinearLayout.LayoutParams(0,-2,1f))

@@ -108,7 +108,8 @@ class PaperActivity : Activity() {
         }
         ink = PaperInkView(this)
         ink.stylusOnly = prefs.getBoolean("paper_stylus_only", false)
-        ink.historyRequest = { redo ->
+        ink.historyRequest = history@{ redo ->
+            if(::saveQueue.isInitialized && !saveQueue.isIdle()) {status.text="正在保存，完成后可撤销或重做。";return@history}
             val id=document
             if(id!=null && !loading && ink.canAcceptExternal && (!::saveQueue.isInitialized || saveQueue.isIdle())) try {
                 val next=PaperRepository(this).history(id,pageIndex,ink.page.width,ink.page.height,ink.page.revision,redo)
