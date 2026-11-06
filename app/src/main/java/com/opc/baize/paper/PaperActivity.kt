@@ -208,6 +208,7 @@ class PaperActivity : Activity() {
         val canvasBody=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
         canvasBody.addView(ink,LinearLayout.LayoutParams(0,-1,1f))
         root.addView(canvasBody,LinearLayout.LayoutParams(-1,0,1f))
+        root.addView(toolScroll,root.indexOfChild(canvasBody),LinearLayout.LayoutParams(-1,dp(56)))
         ink.toolFeedback = {
             if (it.startsWith("已取消框选")) scopeChoice.setSelection(0)
             refreshToolState();status.text=it
@@ -274,7 +275,7 @@ class PaperActivity : Activity() {
                 if(state.error!=null) status.text="请重试保存后再翻页或退出。"
             }}
         }
-        var docked:Boolean?=null
+        var docked=false
         responsiveLayout={width,height ->
             val wide=width>=dp(600)
             if(docked!=wide) {
