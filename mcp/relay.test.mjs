@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createRelay,tools} from './relay.mjs';
+import {createRelay,tools,toolsSchemaSha256} from './relay.mjs';
 
 test('paired MCP -> device -> persistent receipt, retry, restart and revocation',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'we-relay-'));
@@ -12,7 +12,7 @@ test('paired MCP -> device -> persistent receipt, retry, restart and revocation'
  const close=async()=>{server.closeAllConnections();await new Promise(r=>server.close(r))};
  const http=async(path,body,token,headers={})=>{const response=await fetch(base+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{ }),...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});const text=await response.text();return {status:response.status,body:text?JSON.parse(text):null}};
  try{
-  await start();assert.equal((await http('/health')).body.name,'write-everything');
+  await start();const health=(await http('/health')).body;assert.equal(health.name,'write-everything');assert.equal(health.tools_schema_sha256,toolsSchemaSha256);assert.match(toolsSchemaSha256,/^[a-f0-9]{64}$/);
   assert.equal((await http('/pair',{},null,{Origin:'https://hostile.example'})).status,403);
   const pair=(await http('/pair',{})).body,path='/mcp/'+pair.agentToken;
   const rpc=async(method,params={})=>http(path,{jsonrpc:'2.0',id:1,method,params});

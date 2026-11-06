@@ -12,7 +12,7 @@ object CanvasEdits {
         var page = original
         for (i in 0 until operations.length()) {
             val op = operations.getJSONObject(i)
-            val allowed=setOf("action","layer_id","points","width","color","brush","x","y","x2","y2","dx","dy","center_x","center_y","rotation","scale","duplicate","mirror","indices","name","visible","locked","opacity","blend","index","filled","bounds")
+            val allowed=setOf("action","layer_id","points","width","color","brush","x","y","x2","y2","dx","dy","center_x","center_y","rotation","scale","duplicate","mirror","indices","name","visible","locked","opacity","blend","index","filled","bounds","content","font_size")
             require(op.keys().asSequence().all {it in allowed}) { "Unknown operation field" }
             for(key in listOf("layer_id","index")) if(op.has(key)) require(op.get(key) is Int || op.get(key) is Long) { "$key must be an integer" }
             for(key in listOf("duplicate","mirror","visible","locked","filled")) if(op.has(key)) require(op.get(key) is Boolean) { "$key must be boolean" }
@@ -21,7 +21,7 @@ object CanvasEdits {
                 for(key in listOf("pressure","mypaint")) if(brush.has(key)) require(brush.get(key) is Boolean)
                 for(key in listOf("hardness","opacity","spacing","smudge")) if(brush.has(key)) require(brush.get(key) is Number)
             }
-            for(key in listOf("action","name","color","blend")) if(op.has(key)) require(op.get(key) is String) { "$key must be text" }
+            for(key in listOf("action","name","color","blend","content")) if(op.has(key)) require(op.get(key) is String) { "$key must be text" }
             if(op.has("brush")) require(op.get("brush") is JSONObject)
             val action = op.getString("action")
             val layerId = op.optInt("layer_id", page.activeLayerId)
@@ -43,6 +43,26 @@ object CanvasEdits {
                 page = page.copy(strokes=page.strokes + PaperStroke(points,width,colorText.drop(1).toLong(16).toInt().let {if(colorText.length==7) it or 0xff000000.toInt() else it},DrawdanceBrush.ENGINE,layerId,brush,if(fill) "fill" else if(polygon) "polygon" else "stroke"))
             }
             when(action) {
+                "svg", "text", "image" -> {
+                    editable()
+                    val a=point(number("x"),number("y"));val b=point(number("x2"),number("y2"))
+                    require(b.x>a.x && b.y>a.y) { "Artwork requires a positive rectangle" }
+                    val content=op.getString("content");val font=number("font_size",24f)
+                    ArtworkContent.validate(action,content,font)
+                    val color=op.optString("color","#000000");require(color.matches(Regex("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")))
+                    page=page.copy(strokes=page.strokes+PaperStroke(listOf(a,a.copy(x=b.x),b,a.copy(y=b.y)),
+                        color=color.drop(1).toLong(16).toInt().let {if(color.length==7) it or 0xff000000.toInt() else it},
+                        layerId=layerId,brush=BrushSettings.decode(op.optJSONObject("brush")),operation=action,content=content,fontSize=font))
+                }
+                "replace_artwork" -> {
+                    editable();val indices=op.getJSONArray("indices")
+                    require(indices.length()==1 && (indices.get(0) is Int || indices.get(0) is Long)) { "Replace exactly one object" }
+                    val index=indices.getInt(0);require(index in page.strokes.indices)
+                    val old=page.strokes[index];require(old.layerId==layerId && old.operation in ArtworkContent.types)
+                    val content=op.getString("content");val font=number("font_size",old.fontSize)
+                    ArtworkContent.validate(old.operation,content,font)
+                    page=page.copy(strokes=page.strokes.mapIndexed { j,stroke -> if(j==index) stroke.copy(content=content,fontSize=font) else stroke })
+                }
                 "stroke", "erase" -> {
                     val points = op.getJSONArray("points"); require(points.length() in 1..10000)
                     add((0 until points.length()).map { j -> val p=points.getJSONArray(j); require(p.length() in 2..4 && (0 until p.length()).all {p.get(it) is Number})
@@ -131,12 +151,13 @@ object CanvasEdits {
                     val scale=number("scale",1f); require(scale>0 && scale<=100)
                     val angle=number("rotation")*PI/180; val dx=number("dx"); val dy=number("dy")
                     val cx=number("center_x",page.width/2f); val cy=number("center_y",page.height/2f)
-                    fun transform(stroke: PaperStroke)=stroke.copy(width=(stroke.width*scale).coerceIn(.1f,1000f),points=stroke.points.map { p ->
+                    fun transform(stroke: PaperStroke)=stroke.copy(fontSize=if(stroke.operation=="text") (stroke.fontSize*scale).coerceIn(1f,1000f) else stroke.fontSize,width=(stroke.width*scale).coerceIn(.1f,1000f),points=stroke.points.map { p ->
                         val x=(p.x-cx)*scale*(if(op.optBoolean("mirror")) -1 else 1); val y=(p.y-cy)*scale
                         point((cx+x*cos(angle)-y*sin(angle)+dx).toFloat(),(cy+x*sin(angle)+y*cos(angle)+dy).toFloat(),p.pressure,p.time)
                     })
                     if(action=="restyle") {
                         require(listOf("color","width","brush").any {op.has(it)}) { "Provide color, width or brush" }
+                        require(!op.has("color") || indices.none {page.strokes[it].operation in setOf("svg","image")}) { "SVG/image colors are embedded; replace_artwork instead" }
                         val color=op.optString("color")
                         if(op.has("color")) require(color.matches(Regex("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")))
                         val width=number("width",1f);require(width>0 && width<=1000)

@@ -90,6 +90,13 @@ class PaperInkView(context: Context) : View(context) {
         history.addLast(page);if(history.size>30) history.removeFirst();future.clear();publish(data)
     }
     private fun commit(strokes: List<PaperStroke>) = edit(page.copy(strokes=strokes))
+    fun applyArtwork(operations:org.json.JSONArray) {
+        try {
+            val next=CanvasEdits.apply(page,operations)
+            next.strokes.filter {it.operation in ArtworkContent.types}.forEach {ArtworkRenderer.validate(it)}
+            edit(next)
+        } catch(e:Exception) {toolFeedback?.invoke("未应用：${e.message}")}
+    }
     fun selectLayer(id: Int) { if(page.layers.any {it.id==id} && page.activeLayerId!=id) {cancelInteraction();publish(page.copy(activeLayerId=id))} }
     fun addLayer() {
         if(page.layers.size>=32) return
@@ -122,7 +129,7 @@ class PaperInkView(context: Context) : View(context) {
         val affine=com.xnotes.core.geometry.Affine.translateBy(moveX.toDouble(),moveY.toDouble())
             .compose(com.xnotes.core.geometry.Affine.rotateAbout(center,Math.toRadians(rotation.toDouble())))
             .compose(com.xnotes.core.geometry.Affine.scaleAbout(center,if(mirror) -scale.toDouble() else scale.toDouble(),scale.toDouble()))
-        val transformed=chosen.map {stroke -> stroke.copy(width=(stroke.width*scale).coerceIn(.1f,1000f),points=stroke.points.map {p ->
+        val transformed=chosen.map {stroke -> stroke.copy(fontSize=if(stroke.operation=="text") (stroke.fontSize*scale).coerceIn(1f,1000f) else stroke.fontSize,width=(stroke.width*scale).coerceIn(.1f,1000f),points=stroke.points.map {p ->
             val point=affine.apply(com.xnotes.core.geometry.Pt(p.x.toDouble(),p.y.toDouble()))
             p.copy(x=point.x.toFloat().coerceIn(0f,page.width.toFloat()),y=point.y.toFloat().coerceIn(0f,page.height.toFloat())) })}
         commit((if(duplicate) page.strokes else page.strokes-chosen.toSet()) + if(delete) emptyList() else transformed)

@@ -574,7 +574,7 @@
   },
   {
     "name": "get_canvas_context",
-    "description": "Read saved revision, layer IDs and stroke count for a PDF path. Without path returns the foreground editor context or active:null. Active context includes live revision, tool, brush, viewport, selection and input_in_progress. Mutations require the saved and live revision to agree; read_page returns saved vectors only. With path also returns paginated object indices/bounds/style, supported actions, blend modes and brush presets. Use object indices at this revision to edit specific content.",
+    "description": "Read saved revision, layer IDs and stroke count for a PDF path. Without path returns the foreground editor context or active:null. Active context includes live revision, tool, brush, viewport, selection and input_in_progress. Mutations require the saved and live revision to agree; read_page returns saved vectors only. With path also returns paginated object indices/bounds/style, supported actions, blend modes and brush presets. Use object indices at this revision to edit specific content. To read large artwork source, set object_index and paginate object_content with content_offset/content_limit (default16000,max32000); verify revision remains unchanged between chunks.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -595,6 +595,20 @@
           "type": "integer",
           "minimum": 0,
           "description": "Object summary pagination offset; default 0, 100 per page. Requires path."
+        },
+        "object_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "With path, return a bounded chunk of this object source at the saved revision instead of summaries."
+        },
+        "content_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32000
         }
       },
       "required": [
@@ -611,7 +625,7 @@
   },
   {
     "name": "edit_canvas",
-    "description": "Atomic batch edits to saved vectors and the foreground canvas when open. Required expected_revision; stale or in-progress input fails without changes. stroke/erase require points; line/rectangle/ellipse require x,y,x2,y2; fill fills entire layer. Layers support add/update/select/delete/reorder/duplicate; clear_layer clears only unlocked layer. transform/delete_strokes require indices from read_page; transform supports dx/dy/scale/rotation/mirror/duplicate around center_x/y (default page center). All coordinates are page points; out-of-bounds transforms fail. Brush options include pressure, opacity, hardness, smudge and MyPaint. Each successful batch is one undo step. Does not modify original PDF. polygon accepts 3+ [x,y] points, bezier exactly four cubic control points. filled=true creates a solid rectangle/ellipse/polygon. fill accepts seed x,y (default 0,0); flood samples current layer only. restyle changes existing color/width/brush; partial brush fields preserve other settings. transform/delete_strokes/restyle select by indices, bounds, or entire layer if neither is given. bounds selects whole strokes, not pixel clipping.",
+    "description": "Atomic batch edits to saved vectors and the foreground canvas when open. Required expected_revision; stale or in-progress input fails without changes. stroke/erase require points; line/rectangle/ellipse require x,y,x2,y2; fill fills entire layer. Layers support add/update/select/delete/reorder/duplicate; clear_layer clears only unlocked layer. transform/delete_strokes require indices from read_page; transform supports dx/dy/scale/rotation/mirror/duplicate around center_x/y (default page center). All coordinates are page points; out-of-bounds transforms fail. Brush options include pressure, opacity, hardness, smudge and MyPaint. Each successful batch is one undo step. Does not modify original PDF. polygon accepts 3+ [x,y] points, bezier exactly four cubic control points. filled=true creates a solid rectangle/ellipse/polygon. fill accepts seed x,y (default 0,0); flood samples current layer only. restyle changes existing color/width/brush; partial brush fields preserve other settings. transform/delete_strokes/restyle select by indices, bounds, or entire layer if neither is given. bounds selects whole strokes, not pixel clipping. svg/text/image create editable rectangular objects using content and x,y,x2,y2. SVG uses AndroidSVG 1.4 (gradients, groups, clipping and text inside one source object); image is bounded PNG/JPEG base64. replace_artwork requires exactly one index and content; preserves object geometry. Objects support existing transforms, duplication, deletion and layer history. Read source with read_page; get_canvas_context returns content length only. restyle cannot recolor SVG/image contents; replace their source instead.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -659,7 +673,11 @@
                   "delete_strokes",
                   "polygon",
                   "bezier",
-                  "restyle"
+                  "restyle",
+                  "svg",
+                  "text",
+                  "image",
+                  "replace_artwork"
                 ]
               },
               "layer_id": {
@@ -814,6 +832,17 @@
                   "type": "number"
                 },
                 "description": "[left,top,right,bottom]. Select whole strokes with at least one point in bounds on layer_id; not a pixel mask. Mutually exclusive with indices."
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 350000,
+                "description": "svg: self-contained SVG with viewBox, <=128 KB; no external references/images/use/scripts/declarations. text: <=8000 chars. image: raw PNG/JPEG base64 <=350 KB, decoded max2048 per edge. replace_artwork: replacement source of the existing object type."
+              },
+              "font_size": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 1000,
+                "description": "Text font size in page points, default24."
               }
             },
             "required": [

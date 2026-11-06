@@ -6,7 +6,7 @@ import android.graphics.Color
 import android.widget.*
 
 /** Drawing controls stay in panels so the paper keeps its space. */
-class DrawingPanels(private val activity: Activity,private val ink: PaperInkView,private val write: ()->Unit) {
+class DrawingPanels(private val activity: Activity,private val ink: PaperInkView,private val write: ()->Unit,private val importImage: ()->Unit = {}) {
     private fun box()=LinearLayout(activity).apply {orientation=LinearLayout.VERTICAL;setPadding(24,12,24,12)}
     private fun button(box: LinearLayout,label: String,action: ()->Unit) {
         box.addView(Button(activity).apply {text=label;setOnClickListener {action()}})
@@ -86,13 +86,49 @@ class DrawingPanels(private val activity: Activity,private val ink: PaperInkView
         dialog.show()
     }
     fun tools() {
-        val labels=arrayOf("自由画笔","直线","矩形","椭圆","填充当前图层","吸管取色","局部橡皮","整笔橡皮","重做","移动／复制／删除选区")
+        val labels=arrayOf("自由画笔","直线","矩形","椭圆","填充当前图层","吸管取色","局部橡皮","整笔橡皮","重做","移动／复制／删除选区","添加文字","导入图片","添加矢量图","编辑文字／矢量对象")
         AlertDialog.Builder(activity).setTitle("绘画工具").setItems(labels) {_,i ->
             if(i<=5) {ink.drawingTool=listOf("freehand","line","rectangle","ellipse","fill","eyedropper")[i];ink.brushEngine=DrawdanceBrush.ENGINE;write()}
             if(i==6 || i==7) {ink.pixelEraser=i==6;ink.mode=PaperInkView.Mode.ERASE}
             if(i==8) ink.redo()
             if(i==9) selection()
+            if(i==10) artwork("text")
+            if(i==11) importImage()
+            if(i==12) artwork("svg")
+            if(i==13) {
+                val objects=ink.page.strokes.withIndex().filter {it.value.layerId==ink.page.activeLayerId && it.value.operation in setOf("text","svg")}
+                if(objects.isEmpty()) Toast.makeText(activity,"当前图层没有文字或矢量对象",Toast.LENGTH_SHORT).show()
+                else AlertDialog.Builder(activity).setTitle("选择要编辑的对象").setItems(objects.map {"${it.index} · ${if(it.value.operation=="text") it.value.content.take(24) else "矢量图"}"}.toTypedArray()) {_,j -> artwork(objects[j].value.operation,objects[j].index)}.show()
+            }
         }.setNegativeButton("关闭",null).show()
+    }
+    private fun artwork(type:String,index:Int?=null) {
+        val old=index?.let {ink.page.strokes[it]}
+        val source=EditText(activity).apply {
+            hint=if(type=="text") "输入文字" else "粘贴矢量图内容"
+            setText(old?.content.orEmpty());minLines=3;maxLines=10
+        }
+        val box=box();box.addView(source)
+        val size=EditText(activity).apply {hint="字号（1–1000）";setText((old?.fontSize ?: 24f).toString());inputType=8194}
+        if(type=="text") box.addView(size)
+        val dialog=AlertDialog.Builder(activity).setTitle(if(type=="text") "文字对象" else "矢量图对象")
+            .setView(ScrollView(activity).apply {addView(box)}).setNegativeButton("取消",null).setPositiveButton("应用",null).create()
+        dialog.setOnShowListener {dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val font=size.text.toString().toFloatOrNull() ?: 24f
+            try {
+                ArtworkContent.validate(type,source.text.toString(),font)
+                val op=org.json.JSONObject().put("action",if(index==null) type else "replace_artwork")
+                    .put("content",source.text.toString()).put("font_size",font)
+                if(index!=null) op.put("indices",org.json.JSONArray(listOf(index))) else op
+                    .put("x",ink.page.width*.1f).put("y",ink.page.height*.1f)
+                    .put("x2",ink.page.width*.9f).put("y2",ink.page.height*.6f)
+                    .put("color",String.format("#%08X",ink.penColor))
+                // Parse SVG before closing the editor, so invalid source remains recoverable.
+                val next=CanvasEdits.apply(ink.page,org.json.JSONArray().put(op))
+                next.strokes.filter {it.operation in ArtworkContent.types}.forEach {ArtworkRenderer.validate(it)}
+                ink.applyArtwork(org.json.JSONArray().put(op));write();dialog.dismiss()
+            } catch(e:Exception) {source.error=e.message ?: "无法应用"}
+        }};dialog.show()
     }
     private fun selection() {
         if(!ink.hasSelection) {Toast.makeText(activity,"请先框选完整笔迹",Toast.LENGTH_SHORT).show();return}

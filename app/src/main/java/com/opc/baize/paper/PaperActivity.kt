@@ -224,6 +224,24 @@ class PaperActivity : Activity() {
     @Deprecated("Platform result callback retained to avoid introducing an Activity framework")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if(requestCode==54) {
+            if(resultCode!=RESULT_OK || loading) return
+            val uri=data?.data ?: return
+            val target=document ?: return;val revision=ink.page.revision;val index=pageIndex
+            scope.launch {
+                try {
+                    val image=withContext(Dispatchers.IO) {ArtworkImport.read(this@PaperActivity,uri)}
+                    require(document==target && pageIndex==index && ink.page.revision==revision && ink.canAcceptExternal && !loading) {"画布已变化，请重新导入图片"}
+                    val width=ink.page.width*.8f
+                    val height=minOf(ink.page.height*.8f,width*image.height/image.width)
+                    val fittedWidth=minOf(width,height*image.width/image.height)
+                    ink.applyArtwork(org.json.JSONArray().put(org.json.JSONObject().put("action","image").put("content",image.content)
+                        .put("x",ink.page.width*.1f).put("y",ink.page.height*.1f)
+                        .put("x2",ink.page.width*.1f+fittedWidth).put("y2",ink.page.height*.1f+height)))
+                } catch(e:Exception) {status.text="图片未导入：${e.message}"}
+            }
+            return
+        }
         if(requestCode==53) {
             val path=pendingExport;pendingExport=null
             val file=path?.let {java.io.File(it)}
@@ -437,7 +455,9 @@ class PaperActivity : Activity() {
                 }
             }.show()
     }
-    private fun drawingPanels()=DrawingPanels(this,ink) {chooseTool(PaperInkView.Mode.WRITE)}
+    private fun drawingPanels()=DrawingPanels(this,ink,{chooseTool(PaperInkView.Mode.WRITE)}) {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {type="image/*";addCategory(Intent.CATEGORY_OPENABLE)},54)
+    }
     private fun showBrushPanel() {
         if(ink.brushEngine==DrawdanceBrush.ENGINE) {drawingPanels().brushes();return}
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24,12,24,12) }

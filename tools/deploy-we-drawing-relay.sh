@@ -46,8 +46,9 @@ trap rollback ERR
 mv "$target/relay-local-we.mjs.next" "$target/relay-local-we.mjs"
 systemctl restart "$unit"
 systemctl is-active --quiet "$unit"
-"$node" --input-type=module - "$data" <<'JS'
+"$node" --input-type=module - "$data" "$release/app/src/main/assets/we-mcp-tools.json" <<'JS'
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 let response;
 for(let attempt=0;attempt<20;attempt++){
  try {response=await fetch('http://127.0.0.1:8787/health',{headers:{Origin:'https://localhost'},signal:AbortSignal.timeout(1000)});if(response.ok)break;} catch {}
@@ -55,6 +56,8 @@ for(let attempt=0;attempt<20;attempt++){
 }
 if(!response)throw Error('WE did not become ready');
 if(response.status!==200||response.headers.get('access-control-allow-origin')!=='https://localhost')throw Error('Health/CORS check failed');
+const expected=createHash('sha256').update(fs.readFileSync(process.argv[3])).digest('hex');
+if((await response.json()).tools_schema_sha256!==expected)throw Error('Deployed tool schema does not match this upgrade');
 const data=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 if(data.sessions.length){
  const r=await fetch('http://127.0.0.1:8787/mcp/'+data.sessions[0].agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/list'})});

@@ -58,17 +58,25 @@ class CanvasMcpTools(private val context: Context) {
                 when(name) {
                     "get_canvas_context" -> {
                         val data=saved();val offset=a.optInt("stroke_offset",0);require(offset>=0)
+                        if(a.has("object_index")) {
+                            val objectIndex=a.getInt("object_index");require(objectIndex in data.strokes.indices)
+                            val item=data.strokes[objectIndex];val start=a.optInt("content_offset",0);val limit=a.optInt("content_limit",16000)
+                            require(start in 0..item.content.length && limit in 1..32000)
+                            val end=minOf(item.content.length,start+limit)
+                            return@use metadata(data).put("object_index",objectIndex).put("operation",item.operation).put("object_content",item.content.substring(start,end))
+                                .put("content_length",item.content.length).put("next_content_offset",if(end<item.content.length) end else JSONObject.NULL)
+                        }
                         val objects=data.strokes.drop(offset).take(100).mapIndexed { j,stroke ->
                             JSONObject().put("index",offset+j).put("layer_id",stroke.layerId).put("operation",stroke.operation)
                                 .put("color",String.format("#%08X",stroke.color)).put("width",stroke.width)
-                                .put("point_count",stroke.points.size).put("brush",stroke.brush.encode())
+                                .put("content_length",stroke.content.length).put("font_size",stroke.fontSize).put("point_count",stroke.points.size).put("brush",stroke.brush.encode())
                                 .put("bounds",if(stroke.points.isEmpty()) JSONObject.NULL else JSONArray(listOf(
                                     stroke.points.minOf {it.x},stroke.points.minOf {it.y},stroke.points.maxOf {it.x},stroke.points.maxOf {it.y})))
                         }
                         metadata(data).put("active",CanvasSession.context(w.id) ?: JSONObject.NULL)
                             .put("objects",JSONArray(objects)).put("next_stroke_offset",if(offset+100<data.strokes.size) offset+100 else JSONObject.NULL)
                             .put("capabilities",JSONObject().put("actions",JSONArray(listOf("stroke","erase","line","rectangle","ellipse","polygon","bezier","fill",
-                                "add_layer","update_layer","select_layer","delete_layer","reorder_layer","duplicate_layer","clear_layer","transform","delete_strokes","restyle")))
+                                "add_layer","update_layer","select_layer","delete_layer","reorder_layer","duplicate_layer","clear_layer","transform","delete_strokes","restyle","svg","text","image","replace_artwork")))
                                 .put("blend_modes",JSONArray(PaperLayer.blends)).put("max_layers",32)
                                 .put("brush_presets",JSONArray(BrushSettings.presets.mapIndexed { j,b -> JSONObject().put("name",BrushSettings.names[j]).put("brush",b.encode()) })))
                     }
@@ -76,7 +84,11 @@ class CanvasMcpTools(private val context: Context) {
                         val expected=a.getLong("expected_revision");require(expected>=0)
                         val change:(PaperPage)->PaperPage={ current ->
                             require(current.revision==expected) {"Revision conflict; read canvas again"}
-                            if(name=="edit_canvas") repository.edit(id,index,rendered.width,rendered.height,expected) {CanvasEdits.apply(it,a.getJSONArray("operations"))}
+                            if(name=="edit_canvas") repository.edit(id,index,rendered.width,rendered.height,expected) { currentPage ->
+                                CanvasEdits.apply(currentPage,a.getJSONArray("operations")).also {next ->
+                                    next.strokes.filter {it.operation in ArtworkContent.types}.forEach {ArtworkRenderer.validate(it)}
+                                }
+                            }
                             else {
                                 val action=a.getString("action");require(action=="undo" || action=="redo")
                                 repository.history(id,index,rendered.width,rendered.height,expected,action=="redo")

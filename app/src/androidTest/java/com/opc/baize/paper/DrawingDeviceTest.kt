@@ -212,4 +212,47 @@ class DrawingDeviceTest {
         }
     }
 
+    @Test fun androidSvgGradientsClippingTextAndImagesUseTheSharedRenderer() {
+        val svg="""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient><clipPath id="c"><rect width="50" height="100"/></clipPath></defs><g clip-path="url(#c)"><rect width="100" height="100" fill="url(#g)"/></g></svg>"""
+        fun op(type:String,content:String)=org.json.JSONObject().put("action",type).put("content",content).put("x",10).put("y",10).put("x2",90).put("y2",90)
+        val page=CanvasEdits.apply(PaperPage(160,100,0,emptyList()),org.json.JSONArray().put(op("svg",svg)))
+        ArtworkRenderer.validate(page.strokes.single())
+        LayerRenderer().use {renderer -> val image=raster(renderer,page)
+            try {assertTrue(Color.red(image.getPixel(20,50))>Color.blue(image.getPixel(20,50)));assertEquals(0,Color.alpha(image.getPixel(75,50)))} finally {image.recycle()}
+        }
+        val bitmap=Bitmap.createBitmap(2,2,Bitmap.Config.ARGB_8888).apply {eraseColor(Color.GREEN)}
+        val bytes=java.io.ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);bitmap.recycle()
+        val imagePage=CanvasEdits.apply(PaperPage(160,100,0,emptyList()),org.json.JSONArray().put(op("image",android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP))))
+        LayerRenderer().use {renderer -> val image=raster(renderer,imagePage)
+            try {assertEquals(Color.GREEN,image.getPixel(50,50))} finally {image.recycle()}
+        }
+        val textPage=CanvasEdits.apply(PaperPage(160,100,0,emptyList()),org.json.JSONArray().put(op("text","WE")))
+        LayerRenderer().use {renderer -> val image=raster(renderer,textPage)
+            try {val pixels=IntArray(160*100);image.getPixels(pixels,0,160,0,0,160,100);assertTrue(pixels.any {Color.alpha(it)>0})} finally {image.recycle()}
+        }
+    }
+    @Test fun malformedSvgDoesNotCommitThroughMcpAndArtworkSurvivesHistory() {
+        val context=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("SVG-MCP-regression")
+        try {
+            val doc=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+            val tools=com.opc.baize.mcp.WorkspaceMcpTools(context)
+            fun args()=org.json.JSONObject().put("workspace_id",workspace.id).put("path","/"+doc.pdf.relativeTo(workspace.root).invariantSeparatorsPath)
+            fun svg(source:String)=org.json.JSONObject().put("action","svg").put("content",source).put("x",10).put("y",10).put("x2",100).put("y2",100)
+            val failed=tools.execute("edit_canvas",args().put("operation_id","bad-svg-${workspace.id}").put("expected_revision",0)
+                .put("operations",org.json.JSONArray().put(svg("<svg viewBox='0 0 10 10'><g></svg>"))))
+            assertEquals("failed",failed.getString("status"))
+            assertEquals(0L,tools.execute("get_canvas_context",args()).getJSONObject("result").getLong("revision"))
+            val source="""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>"""
+            val success=tools.execute("edit_canvas",args().put("operation_id","good-svg-${workspace.id}").put("expected_revision",0).put("operations",org.json.JSONArray().put(svg(source))))
+            assertEquals("succeeded",success.getString("status"))
+            val undo=tools.execute("canvas_history",args().put("operation_id","undo-svg-${workspace.id}").put("expected_revision",1).put("action","undo"))
+            assertEquals(0,undo.getJSONObject("result").getInt("stroke_count"))
+            val redo=tools.execute("canvas_history",args().put("operation_id","redo-svg-${workspace.id}").put("expected_revision",2).put("action","redo"))
+            assertEquals(1,redo.getJSONObject("result").getInt("stroke_count"))
+            val exported=tools.execute("export_canvas",args().put("operation_id","export-svg-${workspace.id}").put("expected_revision",3))
+            assertEquals("succeeded",exported.getString("status"));assertTrue(exported.getJSONObject("result").has("content"))
+        } finally {workspace.container.deleteRecursively()}
+    }
+
 }

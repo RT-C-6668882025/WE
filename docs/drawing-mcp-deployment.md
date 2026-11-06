@@ -23,3 +23,7 @@ sudo bash tools/deploy-we-drawing-relay.sh
 ## 对象编辑扩展
 
 新增操作复用 edit_canvas，工具数量仍为十六个。get_canvas_context 新增对象摘要、能力和笔刷清单，edit_canvas 新增 polygon/bezier/restyle、filled/bounds 与填色种子。设备端与中继需同时升级；旧中继的 schema 无法暴露新增参数。完整实现边界见 drawing-capabilities.md。
+
+## 0.9 联合升级核对
+
+工具总数仍为16，不能据此判断服务端是否最新。升级脚本额外核对 /health 中的 tools_schema_sha256 是否等于本次提交附带的 schema 文件 SHA-256；不匹配就回滚启动文件。0.9设备使用新增对象操作时必须同步升级中继。

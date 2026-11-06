@@ -1,0 +1,11 @@
+WE artwork integration
+
+AndroidSVG 1.4, Copyright 2013-2018 Cave Rock Software Ltd.
+https://github.com/BigBadaboom/androidsvg
+Apache License 2.0. Full license accompanies this notice.
+Unmodified Maven dependency: com.caverock:androidsvg-aar:1.4.
+
+AndroidX ExifInterface 1.3.7, Copyright The Android Open Source Project.
+https://developer.android.com/jetpack/androidx/releases/exifinterface
+Apache License 2.0 (same full license in AndroidSVG-LICENSE.txt).
+Pinned for the project's current Android API 34 build toolchain.
