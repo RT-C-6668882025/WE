@@ -58,6 +58,7 @@ class PaperActivity : Activity() {
     private lateinit var nextPage: Button
     private lateinit var requestField: EditText
     private lateinit var sendButton: Button
+    private data class RetainedCanvas(val saves:CanvasSaveQueue,val document:String?,val index:Int)
     private lateinit var saveQueue:CanvasSaveQueue
     private lateinit var saveLabel:TextView
     private lateinit var retrySave:Button
@@ -85,7 +86,7 @@ class PaperActivity : Activity() {
         sendButton.isEnabled=busy || !loading
     }
     override fun onCreate(state: Bundle?) {
-        super.onCreate(state); pendingExport=state?.getString("drawing_export"); repository = PaperRepository(this)
+        super.onCreate(state); pendingExport=state?.getString("drawing_export"); repository = PaperRepository(applicationContext)
         workspaceId = intent.getStringExtra("workspace")
         command = prefs.getInt("paper_command", 0).coerceIn(0,3)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -215,7 +216,10 @@ class PaperActivity : Activity() {
         saveRow.addView(saveLabel,LinearLayout.LayoutParams(0,-2,1f))
         retrySave=button(saveRow,"重试保存") {saveQueue.retry()}.apply {visibility=android.view.View.GONE}
         status.setPadding(dp(12),dp(2),dp(12),dp(6));root.addView(status)
-        saveQueue=CanvasSaveQueue(io,{id,index,data -> repository.save(id,index,data)}) {state ->
+        val retained=lastNonConfigurationInstance as? RetainedCanvas
+        val store=repository
+        saveQueue=retained?.saves ?: CanvasSaveQueue(io,{id,index,data -> store.save(id,index,data)},{})
+        saveQueue.observe {state ->
             runOnUiThread {if(!destroyed) {
                 saveLabel.text=when {state.error!=null->"保存失败 · 笔迹仍保留在当前画布";state.pending>0->"正在保存…";else->"已保存"}
                 retrySave.visibility=if(state.error!=null) android.view.View.VISIBLE else android.view.View.GONE
@@ -242,7 +246,9 @@ class PaperActivity : Activity() {
             }
         }
         autoStudy = false
-        if (generated != null && workspaceId != null) {
+        if(retained?.document!=null) {
+            load(retained.document,retained.index,true)
+        } else if (generated != null && workspaceId != null) {
             openGenerated(java.io.File(generated), workspaceId!!, intent.getStringExtra("sourcePath"))
         } else prefs.getString("paper_last_document_${workspaceId.orEmpty()}", null)?.let { load(it, prefs.getInt("paper_last_page_${workspaceId.orEmpty()}", 0)) }
     }
@@ -296,8 +302,8 @@ class PaperActivity : Activity() {
             } catch (e: Exception) { runOnUiThread { if (!destroyed) { loading = false; ink.isEnabled = true; attachCanvas(); status.text = "PDF 导入失败，请检查文件格式或大小（最多 100MB）。" } } }
         }
     }
-    private fun load(id: String, requestedPage: Int) {
-        if (loading || destroyed || !canLeaveCanvas()) return
+    private fun load(id: String, requestedPage: Int,restorePending:Boolean=false) {
+        if (loading || destroyed || (!restorePending && !canLeaveCanvas())) return
         CanvasSession.detach(this)
         handler.removeCallbacks(recognizeLater)
         interactionVersion++
@@ -312,12 +318,12 @@ class PaperActivity : Activity() {
                 val reader = requireNotNull(renderer); val count = reader.pageCount; require(count > 0)
                 val index = requestedPage.coerceIn(0, count - 1)
                 val rendered = reader.render(index)
-                val result = try { rendered.bitmap to repository.load(id, index, rendered.width, rendered.height) }
+                val result = try { rendered.bitmap to (saveQueue.latest(id,index) ?: repository.load(id, index, rendered.width, rendered.height)) }
                 catch (e: Exception) { rendered.bitmap.recycle(); throw e }
                 runOnUiThread {
                     if (destroyed) { result.first.recycle(); return@runOnUiThread }
                     // A committed MCP edit must win over an earlier decoded IO snapshot.
-                    val latest=try {repository.load(id,index,result.second.width,result.second.height)} catch(e:Exception) {
+                    val latest=try {saveQueue.latest(id,index) ?: repository.load(id,index,result.second.width,result.second.height)} catch(e:Exception) {
                         result.first.recycle();loading=false;ink.isEnabled=true
                         status.text="笔迹同步失败，原页面保留：${e.message}";return@runOnUiThread
                     }
@@ -329,7 +335,7 @@ class PaperActivity : Activity() {
                     nextPage.visibility = previousPage.visibility
                     previousPage.isEnabled = index > 0; nextPage.isEnabled = index+1 < count
                     prefs.edit().putString("paper_last_document_${workspaceId.orEmpty()}", id).putInt("paper_last_page_${workspaceId.orEmpty()}",index).apply()
-                    ink.load(result.first,latest); ink.isEnabled = true; loading = false; attachCanvas()
+                    ink.load(result.first,latest);loading=false;ink.isEnabled=saveQueue.state().error==null;attachCanvas()
                     pageLabel.text = "第 ${index + 1} / $count 页"
                     prefs.edit().putString("paper_last_document", id).putInt("paper_last_page", index).apply()
                     status.text = if (autoRecognize) "写下答案或修改要求，停笔后自动继续。" else "已恢复笔迹。可离线书写。"
@@ -623,6 +629,8 @@ class PaperActivity : Activity() {
             },53)
         } catch(_:Exception) {status.text="导出失败，请先打开页面。"}
     }
+    @Deprecated("Platform configuration retention")
+    override fun onRetainNonConfigurationInstance():Any? = if(::saveQueue.isInitialized) RetainedCanvas(saveQueue,document,pageIndex) else null
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("drawing_export",pendingExport);super.onSaveInstanceState(outState)
     }

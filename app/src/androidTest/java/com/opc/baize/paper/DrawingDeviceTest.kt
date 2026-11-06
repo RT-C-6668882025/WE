@@ -329,4 +329,43 @@ class DrawingDeviceTest {
         } finally {instrumentation.runOnMainSync {activity.finish()};workspace.container.deleteRecursively()}
     }
 
+    @Test fun failedSaveAndRetrySurviveActivityRecreation() {
+        val instrumentation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("rotation-save-recovery")
+        val doc=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+        var activity=instrumentation.startActivitySync(android.content.Intent(context,PaperActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("workspace",workspace.id).putExtra("generatedPdf",doc.pdf.path)) as PaperActivity
+        fun ink(a:PaperActivity)=PaperActivity::class.java.getDeclaredField("ink").apply {isAccessible=true}.get(a) as PaperInkView
+        fun saves(a:PaperActivity)=PaperActivity::class.java.getDeclaredField("saveQueue").apply {isAccessible=true}.get(a) as CanvasSaveQueue
+        fun await(check:()->Boolean) {val deadline=System.currentTimeMillis()+15000;while(System.currentTimeMillis()<deadline) {var done=false;instrumentation.runOnMainSync {done=check()};if(done) return;Thread.sleep(30)};fail("Timed out waiting for canvas recovery")}
+        var obstacle:java.io.File?=null
+        try {
+            await {ink(activity).page.width>1}
+            var document=""
+            instrumentation.runOnMainSync {document=PaperActivity::class.java.getDeclaredField("document").apply {isAccessible=true}.get(activity) as String}
+            obstacle=java.io.File(context.filesDir,"papers/$document/page-0.ink.json").apply {assertTrue(mkdir())}
+            instrumentation.runOnMainSync {assertTrue(ink(activity).applyArtwork(org.json.JSONArray("""[{"action":"line","x":20,"y":20,"x2":60,"y2":60}]""")))}
+            await {saves(activity).state().error!=null}
+            val previous=activity
+            instrumentation.runOnMainSync {activity.recreate()}
+            await {
+                val resumed=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<PaperActivity>().firstOrNull {it!==previous}
+                if(resumed!=null) activity=resumed
+                activity!==previous && ink(activity).page.width>1
+            }
+            instrumentation.runOnMainSync {assertEquals(1,ink(activity).page.strokes.size);assertNotNull(saves(activity).state().error)}
+            assertTrue(obstacle.delete());obstacle=null
+            instrumentation.runOnMainSync {saves(activity).retry()}
+            await {saves(activity).isIdle()}
+            assertTrue(CanvasWriteGuard.isClear(document,0))
+            assertEquals(1,PaperRepository(context).load(document,0,ink(activity).page.width,ink(activity).page.height).strokes.size)
+        } finally {
+            obstacle?.delete()
+            instrumentation.runOnMainSync {if(!activity.isDestroyed) {saves(activity).retry();activity.finish()}}
+            PaperIo.executor.submit {}.get(5,java.util.concurrent.TimeUnit.SECONDS)
+            workspace.container.deleteRecursively()
+        }
+    }
+
 }

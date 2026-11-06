@@ -14,13 +14,15 @@ object CanvasWriteGuard {
 
 /** Failed revisions stay ordered and recoverable; later edits never skip a failed save. */
 class CanvasSaveQueue(private val executor:Executor,private val save:(String,Int,PaperPage)->Unit,
-    private val changed:(State)->Unit) {
+    private var changed:(State)->Unit) {
     data class State(val pending:Int,val error:String?)
     private data class Entry(val document:String,val index:Int,val page:PaperPage)
     private val entries=java.util.ArrayDeque<Entry>()
     private var running=false
     private var error:String?=null
     @Synchronized fun state()=State(entries.size,error)
+    @Synchronized fun observe(observer:(State)->Unit) {changed=observer;notifyState()}
+    @Synchronized fun latest(document:String,index:Int)=entries.lastOrNull {it.document==document && it.index==index}?.page
     @Synchronized fun isIdle()=entries.isEmpty() && !running
     @Synchronized fun enqueue(document:String,index:Int,page:PaperPage) {
         CanvasWriteGuard.retain(document,index);entries.addLast(Entry(document,index,page));notifyState();start()
