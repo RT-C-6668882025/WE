@@ -255,4 +255,21 @@ class DrawingDeviceTest {
         } finally {workspace.container.deleteRecursively()}
     }
 
+    @Test fun photoImportNormalizesExifOrientationBeforeEmbeddingPixels() {
+        val context=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val file=java.io.File.createTempFile("we-exif-",".jpg",context.cacheDir)
+        try {
+            val original=Bitmap.createBitmap(8,4,Bitmap.Config.ARGB_8888).apply {eraseColor(Color.GREEN)}
+            file.outputStream().use {assertTrue(original.compress(Bitmap.CompressFormat.JPEG,100,it))};original.recycle()
+            androidx.exifinterface.media.ExifInterface(file.path).apply {
+                setAttribute(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90.toString());saveAttributes()
+            }
+            val imported=ArtworkImport.read(context,android.net.Uri.fromFile(file))
+            assertEquals(4,imported.width);assertEquals(8,imported.height)
+            val data=android.util.Base64.decode(imported.content,android.util.Base64.NO_WRAP)
+            val decoded=android.graphics.BitmapFactory.decodeByteArray(data,0,data.size)
+            try {assertEquals(4,decoded.width);assertEquals(8,decoded.height);assertTrue(Color.green(decoded.getPixel(1,1))>200)} finally {decoded.recycle()}
+        } finally {file.delete()}
+    }
+
 }
