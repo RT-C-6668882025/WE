@@ -1147,7 +1147,7 @@ class MainActivity : Activity() {
         val curFont = fontAsset()
         fonts.forEachIndexed { i, (name, asset) ->
             val rb = android.widget.RadioButton(this).apply {
-                text = name; textSize = 15f; id = View.generateViewId()
+                text = name; textSize = 15f; id = View.generateViewId();isSaveEnabled=false
                 isChecked = asset == curFont
                 setOnClickListener {
                     prefs.edit().putString("font_asset", asset).apply()
@@ -1217,6 +1217,7 @@ class MainActivity : Activity() {
         gap(8f)
 
         val keyEdit = android.widget.EditText(this).apply {
+            isSaveEnabled=false
             setSingleLine()   // 先设单行——放在 inputType 之前，否则会清掉密码属性
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS

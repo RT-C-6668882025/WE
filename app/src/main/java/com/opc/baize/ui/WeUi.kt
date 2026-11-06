@@ -22,7 +22,7 @@ object WeUi {
     }
     fun header(activity:Activity,title:String,back:(()->Unit)?={activity.finish()}):LinearLayout = LinearLayout(activity).apply {
         gravity=Gravity.CENTER_VERTICAL;minimumHeight=dp(activity,56)
-        if(back!=null) addView(button(activity,"返回",back),LinearLayout.LayoutParams(dp(activity,56),dp(activity,48)))
+        if(back!=null) addView(button(activity,"返回",back),LinearLayout.LayoutParams(-2,dp(activity,48)))
         addView(TextView(activity).apply {
             text=title;textSize=20f;setTextColor(ink);maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END
             setPadding(dp(activity,12),0,dp(activity,12),0)
@@ -88,7 +88,7 @@ object WeUi {
             for(i in 1 until view.childCount) {
                 val field=view.getChildAt(i);val label=view.getChildAt(i-1)
                 if((field is EditText || field is Spinner || field is SeekBar) && label is TextView && label !is Button && label !is EditText) {
-                    if(field.id==View.NO_ID) field.id=View.generateViewId()
+                    if(field.id==View.NO_ID) {field.id=View.generateViewId();field.isSaveEnabled=false}
                     label.labelFor=field.id
                 }
             }
