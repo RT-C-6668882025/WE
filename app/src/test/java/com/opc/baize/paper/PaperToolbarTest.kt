@@ -61,4 +61,19 @@ class PaperToolbarTest {
             assertEquals("我的系统规则",PaperPrompts.system(context))
         } finally { prefs.edit().remove("paper_prompt_0").remove("paper_system_prompt").commit() }
     }
+    @Test fun brushButtonRestoresFreehandAndAiUsesOneAction() {
+        val controller=Robolectric.buildActivity(PaperActivity::class.java).create().start().resume().visible()
+        try {
+            val activity=controller.get();val all=views(activity.window.decorView)
+            val canvas=all.filterIsInstance<PaperInkView>().single();canvas.drawingTool="fill"
+            all.filterIsInstance<Button>().single {it.text.toString().endsWith("画笔")}.performClick()
+            assertEquals("freehand",canvas.drawingTool)
+            PaperActivity::class.java.getDeclaredField("submitting").apply {isAccessible=true}.setBoolean(activity,true)
+            PaperActivity::class.java.getDeclaredMethod("updateBusy").apply {isAccessible=true}.invoke(activity)
+            val stop=all.filterIsInstance<Button>().single {it.text=="停止"}
+            assertTrue(stop.isEnabled);stop.performClick();assertEquals("发送",stop.text.toString())
+            assertFalse(all.filterIsInstance<Button>().any {it!==stop && it.text=="停止"})
+        } finally {controller.pause().stop().destroy()}
+    }
+
 }

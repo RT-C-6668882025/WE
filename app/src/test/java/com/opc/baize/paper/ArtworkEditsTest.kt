@@ -38,4 +38,10 @@ class ArtworkEditsTest {
         assertThrows(IllegalArgumentException::class.java) {CanvasEdits.apply(locked,JSONArray().put(objectOp("text","x")))}
         assertEquals(svg,original.strokes.single().content)
     }
+    @Test fun deepNestingMalformedXmlAndNamespacedScriptsAreRejected() {
+        val sources=listOf("<svg>"+"<g>".repeat(65)+"</g>".repeat(65)+"</svg>",
+            "<svg><g></svg>","<svg xmlns:x='http://www.w3.org/2000/svg'><x:script/></svg>","<svg onload='run()'/>")
+        sources.forEach {source -> assertThrows(IllegalArgumentException::class.java) {ArtworkContent.validate("svg",source)}}
+    }
+
 }

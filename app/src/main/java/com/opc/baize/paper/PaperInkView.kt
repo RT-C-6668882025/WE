@@ -69,7 +69,7 @@ class PaperInkView(context: Context) : View(context) {
     fun context(): org.json.JSONObject {
         val t=transform()
         return org.json.JSONObject().put("revision",page.revision).put("width",page.width).put("height",page.height)
-            .put("tool",mode.name.lowercase()).put("brush_engine",brushEngine).put("brush",brushSettings.encode())
+            .put("drawing_tool",drawingTool).put("tool",mode.name.lowercase()).put("brush_engine",brushEngine).put("brush",brushSettings.encode())
             .put("pen_width",penWidth).put("pen_color",String.format("#%08X",penColor))
             .put("selection",region?.let {org.json.JSONObject().put("left",it.left).put("top",it.top).put("right",it.right).put("bottom",it.bottom)} ?: org.json.JSONObject.NULL)
             .put("viewport",org.json.JSONObject().put("scale",t.scale).put("left",t.left).put("top",t.top).put("view_width",width).put("view_height",height))
@@ -90,50 +90,39 @@ class PaperInkView(context: Context) : View(context) {
         history.addLast(page);if(history.size>30) history.removeFirst();future.clear();publish(data)
     }
     private fun commit(strokes: List<PaperStroke>) = edit(page.copy(strokes=strokes))
-    fun applyArtwork(operations:org.json.JSONArray) {
+    fun applyArtwork(operations:org.json.JSONArray):Boolean {
         try {
             val next=CanvasEdits.apply(page,operations)
             next.strokes.filter {it.operation in ArtworkContent.types}.forEach {ArtworkRenderer.validate(it)}
-            edit(next)
-        } catch(e:Exception) {toolFeedback?.invoke("未应用：${e.message}")}
+            edit(next);return true
+        } catch(e:Exception) {toolFeedback?.invoke("未应用：${e.message}");return false}
     }
-    fun selectLayer(id: Int) { if(page.layers.any {it.id==id} && page.activeLayerId!=id) {cancelInteraction();publish(page.copy(activeLayerId=id))} }
-    fun addLayer() {
-        if(page.layers.size>=32) return
-        val id=(page.layers.maxOfOrNull {it.id} ?: 0)+1
-        edit(page.copy(layers=page.layers+PaperLayer(id,"图层 $id"),activeLayerId=id))
+    fun cancelInput() {cancelInteraction();gestureSequence=false;gestureFocus=null;invalidate()}
+    fun selectLayer(id: Int) {applyArtwork(org.json.JSONArray().put(org.json.JSONObject().put("action","select_layer").put("layer_id",id)))}
+    fun addLayer() {applyArtwork(org.json.JSONArray().put(org.json.JSONObject().put("action","add_layer")))}
+    fun updateLayer(layer:PaperLayer) {applyArtwork(org.json.JSONArray().put(org.json.JSONObject()
+        .put("action","update_layer").put("layer_id",layer.id).put("name",layer.name).put("visible",layer.visible)
+        .put("locked",layer.locked).put("opacity",layer.opacity).put("blend",layer.blend)))}
+    fun deleteLayer() {applyArtwork(org.json.JSONArray().put(org.json.JSONObject().put("action",if(page.layers.size==1) "clear_layer" else "delete_layer")))}
+    fun reorderLayer(direction:Int) {
+        val index=page.layers.indexOfFirst {it.id==page.activeLayerId};val next=(index+direction).coerceIn(0,page.layers.lastIndex)
+        if(index!=next) applyArtwork(org.json.JSONArray().put(org.json.JSONObject().put("action","reorder_layer").put("index",next)))
     }
-    fun updateLayer(layer: PaperLayer) = edit(page.copy(layers=page.layers.map {if(it.id==layer.id) layer else it}))
-    fun deleteLayer() {
-        if(page.layers.size==1) { if(!page.activeLayer.locked) commit(page.strokes.filterNot {it.layerId==page.activeLayerId});return }
-        val layers=page.layers.filterNot {it.id==page.activeLayerId}
-        edit(page.copy(layers=layers,strokes=page.strokes.filterNot {it.layerId==page.activeLayerId},activeLayerId=layers.last().id))
-    }
-    fun reorderLayer(direction: Int) {
-        val layers=page.layers.toMutableList();val index=layers.indexOfFirst {it.id==page.activeLayerId}
-        val next=(index+direction).coerceIn(0,layers.lastIndex);java.util.Collections.swap(layers,index,next)
-        edit(page.copy(layers=layers))
-    }
-    fun duplicateLayer() {
-        if(page.layers.size>=32) return
-        val id=page.layers.maxOf {it.id}+1;val source=page.activeLayer
-        edit(page.copy(layers=page.layers+source.copy(id=id,name=(source.name+" 副本").take(120),locked=false),
-            strokes=page.strokes+page.strokes.filter {it.layerId==source.id}.map {it.copy(layerId=id)},activeLayerId=id))
-    }
-    fun transformSelection(moveX: Float,moveY: Float,scale: Float,duplicate: Boolean=false,delete: Boolean=false,rotation: Float=0f,mirror: Boolean=false) {
-        val bounds=region ?: return
-        if(page.activeLayer.locked || !page.activeLayer.visible || !scale.isFinite() || scale<=0) return
-        val chosen=page.strokes.filter {it.layerId==page.activeLayerId && it.points.isNotEmpty() && it.points.all {p -> bounds.contains(p.x,p.y)}}
-        if(chosen.isEmpty()) return
-        val center=com.xnotes.core.geometry.Pt(bounds.centerX().toDouble(),bounds.centerY().toDouble())
-        val affine=com.xnotes.core.geometry.Affine.translateBy(moveX.toDouble(),moveY.toDouble())
-            .compose(com.xnotes.core.geometry.Affine.rotateAbout(center,Math.toRadians(rotation.toDouble())))
-            .compose(com.xnotes.core.geometry.Affine.scaleAbout(center,if(mirror) -scale.toDouble() else scale.toDouble(),scale.toDouble()))
-        val transformed=chosen.map {stroke -> stroke.copy(fontSize=if(stroke.operation=="text") (stroke.fontSize*scale).coerceIn(1f,1000f) else stroke.fontSize,width=(stroke.width*scale).coerceIn(.1f,1000f),points=stroke.points.map {p ->
-            val point=affine.apply(com.xnotes.core.geometry.Pt(p.x.toDouble(),p.y.toDouble()))
-            p.copy(x=point.x.toFloat().coerceIn(0f,page.width.toFloat()),y=point.y.toFloat().coerceIn(0f,page.height.toFloat())) })}
-        commit((if(duplicate) page.strokes else page.strokes-chosen.toSet()) + if(delete) emptyList() else transformed)
-        clearSelection()
+    fun duplicateLayer() {applyArtwork(org.json.JSONArray().put(org.json.JSONObject().put("action","duplicate_layer")))}
+    fun transformSelection(moveX:Float,moveY:Float,scale:Float,duplicate:Boolean=false,delete:Boolean=false,rotation:Float=0f,mirror:Boolean=false):Boolean {
+        val bounds=region ?: return false
+        val indices=page.strokes.indices.filter {i -> val stroke=page.strokes[i]
+            stroke.layerId==page.activeLayerId && stroke.points.isNotEmpty() && stroke.points.all {p ->
+                p.x>=bounds.left && p.x<=bounds.right && p.y>=bounds.top && p.y<=bounds.bottom
+            }
+        }
+        if(indices.isEmpty()) {toolFeedback?.invoke("选区内没有完整对象");return false}
+        val op=org.json.JSONObject().put("action",if(delete) "delete_strokes" else "transform")
+            .put("indices",org.json.JSONArray(indices)).put("dx",moveX).put("dy",moveY).put("scale",scale)
+            .put("duplicate",duplicate).put("rotation",rotation).put("mirror",mirror).put("center_x",bounds.centerX()).put("center_y",bounds.centerY())
+        val success=applyArtwork(org.json.JSONArray().put(op))
+        if(success) clearSelection()
+        return success
     }
     fun exportBitmap(transparent: Boolean): Bitmap {
         check(image!=null)

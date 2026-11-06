@@ -272,4 +272,61 @@ class DrawingDeviceTest {
         } finally {file.delete()}
     }
 
+    @Test fun pendingLocalSaveBlocksTheOfflineMcpPath() {
+        val id=java.util.UUID.randomUUID().toString();val tasks=java.util.ArrayDeque<Runnable>()
+        val queue=CanvasSaveQueue(java.util.concurrent.Executor {tasks.addLast(it)},{_,_,_->},{})
+        val page=PaperPage(600,840,1,emptyList());var invoked=false
+        try {
+            queue.enqueue(id,0,page)
+            assertThrows(Exception::class.java) {CanvasSession.change("workspace",id,0,0,{it}) {invoked=true;page}}
+            assertFalse(invoked)
+            tasks.removeFirst().run()
+            assertEquals(page,CanvasSession.change("workspace",id,0,1,{it}) {invoked=true;page})
+            assertTrue(invoked)
+        } finally {while(tasks.isNotEmpty()) tasks.removeFirst().run()}
+    }
+    @Test fun coreToolsFitPhoneLandscapeAndTabletWithoutHorizontalScrolling() {
+        val instrumentation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        val workspace=com.opc.baize.agent.WorkspaceFiles(context).create("responsive-canvas")
+        val doc=com.opc.baize.agent.WorkspaceDrawing.open(workspace,true)
+        val activity=instrumentation.startActivitySync(android.content.Intent(context,PaperActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("workspace",workspace.id).putExtra("generatedPdf",doc.pdf.path)) as PaperActivity
+        fun views(v:android.view.View):List<android.view.View> = listOf(v)+if(v is android.view.ViewGroup) (0 until v.childCount).flatMap {views(v.getChildAt(it))} else emptyList()
+        try {
+            val deadline=System.currentTimeMillis()+15000;var loaded=false
+            while(!loaded && System.currentTimeMillis()<deadline) {
+                instrumentation.runOnMainSync {loaded=views(activity.window.decorView).filterIsInstance<PaperInkView>().single().page.width>1}
+                if(!loaded) Thread.sleep(30)
+            }
+            assertTrue(loaded)
+            instrumentation.runOnMainSync {
+                val root=(activity.findViewById<android.view.ViewGroup>(android.R.id.content)).getChildAt(0) as android.view.ViewGroup
+                val density=activity.resources.displayMetrics.density
+                for((label,size) in listOf("phone" to (320 to 568),"landscape" to (640 to 360),"tablet" to (800 to 600))) {
+                    val w=(size.first*density).toInt();val h=(size.second*density).toInt()
+                    repeat(3) {root.measure(android.view.View.MeasureSpec.makeMeasureSpec(w,android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(h,android.view.View.MeasureSpec.EXACTLY));root.layout(0,0,w,h)}
+                    val all=views(root)
+                    for(name in listOf("画笔","框选","橡皮","笔刷","图层","发送")) {
+                        val button=all.filterIsInstance<android.widget.Button>().single {it.contentDescription?.toString()==name || (name=="发送" && it.text=="发送")}
+                        val bounds=android.graphics.Rect();button.getDrawingRect(bounds);root.offsetDescendantRectToMyCoords(button,bounds)
+                        assertTrue("$label $name outside viewport",bounds.left>=0 && bounds.right<=w && bounds.top>=0 && bounds.bottom<=h)
+                        assertTrue("$label $name touch target",button.width>=48*density)
+                    }
+                    assertTrue("$label canvas too small",all.filterIsInstance<PaperInkView>().single().height>=h*.3f)
+                    val image=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);root.draw(Canvas(image))
+                    try {
+                        val values=android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,"canvas-$label.png")
+                            put(android.provider.MediaStore.Images.Media.MIME_TYPE,"image/png")
+                            if(android.os.Build.VERSION.SDK_INT>=29) put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,"Pictures/WE-CI/")
+                        }
+                        val uri=requireNotNull(context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values))
+                        context.contentResolver.openOutputStream(uri)!!.use {assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,it))}
+                    } finally {image.recycle()}
+                }
+            }
+        } finally {instrumentation.runOnMainSync {activity.finish()};workspace.container.deleteRecursively()}
+    }
+
 }

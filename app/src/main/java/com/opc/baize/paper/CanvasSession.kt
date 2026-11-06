@@ -24,6 +24,7 @@ object CanvasSession {
         // Decide foreground/background ownership on the UI thread, after all prior local saves.
         // A pause/resume or final pen-up cannot slip between this decision and the commit.
         PaperIo.executor.submit {}.get(2,TimeUnit.SECONDS)
+        require(CanvasWriteGuard.isClear(document,page)) { "Local ink is not saved yet; retry after the app saves" }
         val current=editor?.takeIf {it.workspace==workspace && it.document==document && it.page==page}
         if(current!=null) current.change(expected,call) else offline()
     }
