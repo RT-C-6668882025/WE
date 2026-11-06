@@ -287,7 +287,7 @@ class MainActivity : Activity() {
         if(Build.VERSION.SDK_INT>=30) {
             window.setDecorFitsSystemWindows(true)
             window.insetsController?.show(WindowInsets.Type.systemBars())
-        } else window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        } else window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or (if(Build.VERSION.SDK_INT>=27) View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0)
     }
 
     // ---------- UI 构建（纯代码布局，最短渲染路径） ----------
