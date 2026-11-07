@@ -127,16 +127,16 @@ jobs:
       - name: Download the tested APK from this exact run
         run: |
           gh run download "$GITHUB_RUN_ID" --name we-android-native-agent-apk --dir apk
-          mv apk/app-debug.apk apk/WE-v0.12.0-preview.apk
+          mv apk/app-debug.apk apk/WE-v0.12.1-preview.apk
           cd apk
-          sha256sum WE-v0.12.0-preview.apk > SHA256SUMS.txt
+          sha256sum WE-v0.12.1-preview.apk > SHA256SUMS.txt
       - name: Publish WE preview
         run: |
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
           # A CI/configuration-only merge must never replace an already distributed APK.
-          if gh release view v0.12.0-we-preview >/dev/null 2>&1; then
+          if gh release view v0.12.1-we-preview >/dev/null 2>&1; then
             echo "Preview tag already exists; preserving published APK"
             exit 0
           fi
-          gh release create v0.12.0-we-preview apk/WE-v0.12.0-preview.apk apk/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --prerelease --title "WE v0.12.0 Preview" --notes-file docs/releases/v0.12.0.md
+          gh release create v0.12.1-we-preview apk/WE-v0.12.1-preview.apk apk/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --prerelease --title "WE v0.12.1 Preview" --notes-file docs/releases/v0.12.1.md
