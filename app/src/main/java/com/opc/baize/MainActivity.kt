@@ -1360,7 +1360,7 @@ class MainActivity : Activity() {
             orientation=LinearLayout.VERTICAL
             visibility=if(workspaceFiltersExpanded || workspaceSearch.isNotBlank() || workspaceScope!="active") View.VISIBLE else View.GONE
         }
-        val filterButton=WeUi.disclosure(this,"筛选",filterPane).apply {contentDescription="筛选与搜索"}
+        val filterButton=WeUi.disclosure(this,"筛选",filterPane).apply {contentDescription=if(filterPane.visibility==View.VISIBLE) "收起筛选与搜索" else "展开筛选与搜索"}
         val toolbar = LinearLayout(this).apply {gravity=Gravity.CENTER_VERTICAL}
         toolbar.addView(android.widget.Button(this).apply {
             text = "＋ 新工作区";tag=WeUi.PRIMARY
@@ -1379,6 +1379,7 @@ class MainActivity : Activity() {
             workspaceFiltersExpanded=filterPane.visibility!=View.VISIBLE
             filterPane.visibility=if(workspaceFiltersExpanded) View.VISIBLE else View.GONE
             filterButton.isSelected=workspaceFiltersExpanded;filterButton.text=if(workspaceFiltersExpanded) "筛选 ▴" else "筛选 ▾"
+            filterButton.contentDescription=if(workspaceFiltersExpanded) "收起筛选与搜索" else "展开筛选与搜索"
         }
         toolbar.addView(filterButton)
         toolbar.addView(android.widget.Button(this).apply {
@@ -1430,6 +1431,7 @@ class MainActivity : Activity() {
                     setOnClickListener { manageWorkspaces(workspaces.filter { it.id in selectedWorkspaces }, action) }
                 }, LinearLayout.LayoutParams(0, -2, 1f))
                 batch.addView(actions)
+                WeUi.style(batch)
             }
             if (workspaces.isEmpty()) rows.addView(TextView(this).apply {
                 text = when { workspaceSearch.isNotBlank() -> "没有匹配的工作区。"
