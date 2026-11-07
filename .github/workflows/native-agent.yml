@@ -132,5 +132,10 @@ jobs:
       - name: Publish WE preview
         run: |
           test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+          # A CI/configuration-only merge must never replace an already distributed APK.
+          if gh release view v0.12.0-we-preview >/dev/null 2>&1; then
+            echo "Preview tag already exists; preserving published APK"
+            exit 0
+          fi
           gh release create v0.12.0-we-preview apk/WE-v0.12.0-preview.apk apk/SHA256SUMS.txt \
             --target "$GITHUB_SHA" --prerelease --title "WE v0.12.0 Preview" --notes-file docs/releases/v0.12.0.md
