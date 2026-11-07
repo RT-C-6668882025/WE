@@ -38,7 +38,17 @@ android {
         buildConfigField("String", "DEFAULT_FALLBACK_ASK_URL", "\"\"")
     }
 
+    val previewKeyPath = System.getenv("WE_PREVIEW_KEYSTORE_PATH").orEmpty()
+    val previewSigningConfigured = previewKeyPath.isNotBlank()
     signingConfigs {
+        if (previewSigningConfigured) {
+            create("previewPersistent") {
+                storeFile = file(previewKeyPath)
+                storePassword = System.getenv("WE_PREVIEW_STORE_PASSWORD")
+                keyAlias = System.getenv("WE_PREVIEW_KEY_ALIAS")
+                keyPassword = System.getenv("WE_PREVIEW_KEY_PASSWORD")
+            }
+        }
         if (keystoreProps.isNotEmpty()) {
             create("release") {
                 storeFile = File(keystoreProps.getProperty("storeFile"))
@@ -52,6 +62,7 @@ android {
     buildTypes {
         debug {
             // Isolate the subscription probe from an installed production Moling.
+            if (previewSigningConfigured) signingConfig = signingConfigs.getByName("previewPersistent")
             applicationIdSuffix = ".preview"
             versionNameSuffix = "-preview"
         }

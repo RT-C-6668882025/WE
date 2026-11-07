@@ -17,6 +17,9 @@ session_run_case() {
   grep -q 'OK (1 test)' "session-device-results/$session_case.log"
 }
 session_run_case seedEncryptedVerifiedSession
+# Package replacement must preserve both the encrypted file and Android Keystore entry.
+# This uses the same APK; it verifies data retention, not an older certificate migration.
+adb install -r "$session_app_apk"
 adb shell am force-stop "$session_app_id"
 session_run_case restoresAfterForceStopAndClearPreventsResurrection
 session_run_case rejectsTamperedCiphertextAndKeepsExpiredRefreshState
