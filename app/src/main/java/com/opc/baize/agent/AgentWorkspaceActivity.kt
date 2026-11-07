@@ -31,6 +31,7 @@ class AgentWorkspaceActivity : Activity() {
     private var draftWorkspaceId=""
     private val drafts=mutableMapOf<String,String>()
     override fun onCreate(savedInstanceState: Bundle?) {
+        if(intent.getBooleanExtra("canvasPanel",false)) setTheme(android.R.style.Theme_Material_Light_Dialog_NoActionBar)
         super.onCreate(savedInstanceState); files = WorkspaceFiles(this)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12),0,dp(12),dp(8)) }
         root.setBackgroundColor(android.graphics.Color.rgb(246,241,228))
@@ -281,6 +282,11 @@ class AgentWorkspaceActivity : Activity() {
     } }
     override fun onResume() {
         super.onResume()
+        if(intent.getBooleanExtra("canvasPanel",false)) {
+            window.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,(resources.displayMetrics.heightPixels*.78f).toInt())
+            window.setGravity(android.view.Gravity.BOTTOM)
+            setFinishOnTouchOutside(false)
+        }
         WorkspaceEvents.subscribe(indexChanged)
         indexChanged()
     }

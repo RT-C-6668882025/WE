@@ -38,9 +38,9 @@ class AppUiDeviceTest {
             for(font in listOf(1f,1.3f)) {
                 scale(font)
                 for((name,cls,required) in listOf(
-                    Triple("home",MainActivity::class.java,listOf("画布","对话","工作区","设置","关于")),
-                    Triple("settings",MainActivity::class.java,listOf("画布","对话","工作区","设置","关于")),
-                    Triple("about",MainActivity::class.java,listOf("画布","对话","工作区","设置","关于")),
+                    Triple("home",MainActivity::class.java,listOf("画布","工作区","设置","关于")),
+                    Triple("settings",MainActivity::class.java,listOf("画布","工作区","设置","关于")),
+                    Triple("about",MainActivity::class.java,listOf("画布","工作区","设置","关于")),
                     Triple("conversation",AgentWorkspaceActivity::class.java,listOf("返回","画布","设置","发送")),
                     Triple("models",SubscriptionSettingsActivity::class.java,listOf("返回"))
                 )) {
