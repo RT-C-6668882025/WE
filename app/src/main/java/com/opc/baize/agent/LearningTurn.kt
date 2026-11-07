@@ -44,6 +44,7 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
             render(source, pdf)
             val previous = workspace.transcript.takeIf(File::isFile)?.readText().orEmpty()
             write(workspace.transcript, (previous + "\n你：${record.getString("request")}\nWE：$answer\n页面：/memory/pages/${source.name}\n").takeLast(256000))
+            record.put("answer",answer)
             update("ready"); WorkspacePageEvents.publish(workspace.id,pdf)
             return pdf
         } catch (e: Exception) { update("interrupted"); throw e }
@@ -91,6 +92,20 @@ class LearningTurn private constructor(val workspace: WeWorkspace, val id: Strin
             val id = UUID.randomUUID().toString()
             return LearningTurn(workspace, id, JSONObject().put("request", request).put("sourcePath", sourcePath.orEmpty())
                 .put("origin", origin).put("createdAt", System.currentTimeMillis())).also { it.update("prepared") }
+        }
+        /** Immutable per-turn files remain the archive; display limits never delete history. */
+        fun conversation(workspace: WeWorkspace, limit:Int=40):String {
+            val records=File(workspace.container,"turns").listFiles().orEmpty()
+                .filter {it.extension=="json"}.mapNotNull {file->runCatching {
+                    val record=JSONObject(AtomicFile(file).openRead().bufferedReader().use {it.readText()})
+                    if(record.optString("state")!="ready") null else file to record
+                }.getOrNull()}.sortedBy {it.second.optLong("createdAt")}.takeLast(limit)
+            return records.joinToString("\n\n") {(file,record)->
+                val source=File(workspace.root,"memory/pages/turn-${file.nameWithoutExtension}.md")
+                val answer=record.optString("answer").takeIf {it.isNotBlank()}
+                    ?: source.takeIf {it.isFile && it.length()<=256000}?.readText().orEmpty()
+                "你：${record.optString("request")}\nWE：$answer"
+            }
         }
         fun latestReady(workspace: WeWorkspace): File? = File(workspace.container, "turns").listFiles().orEmpty()
             .filter { it.extension == "json" }.mapNotNull { file -> runCatching {

@@ -28,6 +28,7 @@ class AgentWorkspaceActivity : Activity() {
     private var runtimeWorkspace = ""
     private var job: Job? = null
     private var openingPage=false
+    private var historyLimit=40
     private var draftWorkspaceId=""
     private val drafts=mutableMapOf<String,String>()
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,19 +98,29 @@ class AgentWorkspaceActivity : Activity() {
                 else {val text=input.text.toString().trim();if(text.isNotEmpty()) run(text) else input.error="请输入需求后发送"}
             }
         };composer.addView(stop,LinearLayout.LayoutParams(dp(64),dp(48)))
+        button(root,"加载更早记录") {
+            val owner=current();historyLimit+=40
+            scope.launch {
+                val history=withContext(Dispatchers.IO) {LearningTurn.conversation(owner,historyLimit)}
+                if(current().id==owner.id) output.text=history
+            }
+        }
         root.addView(ScrollView(this).apply {addView(output)},LinearLayout.LayoutParams(-1,0,1f))
         root.addView(composer)
         WeUi.style(root);WeUi.style(settings)
         choice.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
                 val selectedId=current().id
+                historyLimit=40
                 if(draftWorkspaceId!=selectedId) {
                     if(draftWorkspaceId.isNotEmpty()) drafts[draftWorkspaceId]=input.text.toString()
                     input.setText(drafts[selectedId].orEmpty())
                     draftWorkspaceId=selectedId
                 }
                 resetRuntime(); showInfo()
-                output.text = current().transcript.takeIf { it.isFile }?.readText()?.takeLast(24000) ?: ""
+                output.text = LearningTurn.conversation(current()).ifBlank {
+                    current().transcript.takeIf {it.isFile}?.readText()?.takeLast(24000).orEmpty()
+                }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -174,7 +185,9 @@ class AgentWorkspaceActivity : Activity() {
                 }
                 resetRuntime()
                 if(input.text.toString().trim()==text) input.text.clear()
-                openPaper(pdf, true)
+                val content=withContext(Dispatchers.IO) {LearningTurn.conversation(workspace)}
+                output.text=content
+                info.text="回复已追加，原页面和笔迹保留；可从工作区文件打开生成页。"
             } catch (e: CancellationException) { resetRuntime(); throw e }
             catch (e: Exception) { output.append("\n未完成：${e.message?.take(160) ?: e.javaClass.simpleName}"); resetRuntime() }
             finally {if(!openingPage) controls.forEach {it.isEnabled=true};stop.text="发送";choice.post {indexChanged()}}
