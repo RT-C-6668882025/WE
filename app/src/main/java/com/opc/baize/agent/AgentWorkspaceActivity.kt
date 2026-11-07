@@ -1,6 +1,7 @@
 @file:OptIn(cc.noharry.agent.kernel.api.ExperimentalAgentRuntimeApi::class)
 package com.opc.baize.agent
 
+import com.opc.baize.ui.WeUi
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -29,23 +30,30 @@ class AgentWorkspaceActivity : Activity() {
     private var openingPage=false
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); files = WorkspaceFiles(this)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16),dp(12),dp(16),dp(12)) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12),0,dp(12),dp(8)) }
         root.setBackgroundColor(android.graphics.Color.rgb(246,241,228))
         setContentView(root)
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; root.addView(this) }
-        label("工作区对话", 22f)
+        val header=WeUi.header(this,"工作区对话") {onBackPressed()}
+        root.addView(header)
+        output=TextView(this).apply {textSize=17f;setTextColor(WeUi.ink);setTextIsSelectable(true);setPadding(dp(4),dp(12),dp(4),dp(12))}
 
         choice = Spinner(this).apply {contentDescription="当前工作区"}; root.addView(choice); controls += choice
         val settings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         button(settings, "新建工作区") {
             val name = EditText(this).apply { hint = "工作区名称" }
             AlertDialog.Builder(this).setTitle("新建工作区").setView(name).setNegativeButton("取消", null)
-                .setPositiveButton("创建") { _, _ -> safe { val created = files.create(name.text.toString()); reload(created.id) } }.show()
+                .setPositiveButton("创建",null).create().apply {
+                    show();getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        try {val created=files.create(name.text.toString());reload(created.id);dismiss()}
+                        catch(e:Exception) {name.error=e.message ?: "请检查名称"}
+                    }
+                }
         }
-        info = TextView(this).apply { textSize = 13f }; settings.addView(info)
+        info = TextView(this).apply { textSize = 12f;setTextColor(WeUi.secondary);maxLines=2;accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE };root.addView(info)
         val navigation = LinearLayout(this)
-        root.addView(navigation)
+        header.addView(navigation)
         button(navigation, "画布") { openCanvas() }
         button(navigation, "设置") {
             (settings.parent as? android.view.ViewGroup)?.removeView(settings)
@@ -64,27 +72,31 @@ class AgentWorkspaceActivity : Activity() {
             val editor = EditText(this).apply { setText(files.mcp(workspace)); minLines = 5; gravity = android.view.Gravity.TOP }
             AlertDialog.Builder(this).setTitle("公开 MCP（Streamable HTTP）")
                 .setMessage("填写 JSON 数组，例如 [{\"id\":\"wiki\",\"url\":\"https://mcp.deepwiki.com/mcp\"}]。当前支持无需认证的 HTTPS 服务。")
-                .setView(editor).setNegativeButton("取消", null).setPositiveButton("保存") { _, _ -> safe {
-                    files.saveMcp(workspace, editor.text.toString()); resetRuntime(); showInfo()
-                } }.show()
+                .setView(editor).setNegativeButton("取消",null).setPositiveButton("保存",null).create().apply {
+                    show();getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        try {files.saveMcp(workspace,editor.text.toString());resetRuntime();showInfo();dismiss()}
+                        catch(e:Exception) {editor.error=e.message ?: "请检查配置格式"}
+                    }
+                }
         }
         button(settings, "查看工作区文件 / 打开手写页") { showFiles() }
         input = EditText(this).apply { hint = "告诉 AI 要做什么";minLines=1;maxLines=4;gravity=android.view.Gravity.TOP;textSize=16f;contentDescription="工作区需求" }
-        root.addView(input); controls += input
+        val composer=LinearLayout(this).apply {gravity=android.view.Gravity.CENTER_VERTICAL}
+        composer.addView(input,LinearLayout.LayoutParams(0,-2,1f));controls+=input
         button(settings, "验证本机工具调用（使用订阅额度）") {
             run("请使用工作区文件工具创建 /memory/pages/we-native-probe-${System.currentTimeMillis()}.md，内容为 WE_NATIVE_OK；然后用读取工具读取该文件，最后报告读取结果。必须实际调用工具。")
         }
         stop = Button(this).apply {
-            text="发送";isAllCaps=false;minHeight=dp(48);contentDescription="发送或停止当前任务"
+            text="发送";tag=WeUi.PRIMARY;isAllCaps=false;minHeight=dp(48);contentDescription="发送或停止当前任务"
             setOnClickListener {
                 if(job?.isActive==true) {job?.cancel();output.append("\n已请求停止。")}
                 else if(openingPage) info.text="正在打开画布，请稍候…"
-                else {val text=input.text.toString().trim();if(text.isNotEmpty()) run(text)}
+                else {val text=input.text.toString().trim();if(text.isNotEmpty()) run(text) else input.error="请输入需求后发送"}
             }
-        }; root.addView(stop)
-        output = label("", 17f).apply { setTextIsSelectable(true); setTextColor(android.graphics.Color.rgb(58,53,44)) }
-        root.removeView(output)
-        root.addView(ScrollView(this).apply { addView(output) },3,LinearLayout.LayoutParams(-1,0,1f))
+        };composer.addView(stop,LinearLayout.LayoutParams(dp(64),dp(48)))
+        root.addView(ScrollView(this).apply {addView(output)},LinearLayout.LayoutParams(-1,0,1f))
+        root.addView(composer)
+        WeUi.style(root);WeUi.style(settings)
         choice.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
                 resetRuntime(); showInfo()
@@ -94,7 +106,7 @@ class AgentWorkspaceActivity : Activity() {
         }
         if (files.list().isEmpty()) files.create("我的工作区")
         reload(intent.getStringExtra("workspace") ?: getPreferences(MODE_PRIVATE).getString("workspace", ""))
-        intent.getStringExtra("feedback")?.let { input.setText(it) }
+        input.setText(savedInstanceState?.getString("draft") ?: intent.getStringExtra("feedback").orEmpty())
     }
     private fun dp(value:Int)=(value*resources.displayMetrics.density).toInt()
     private fun button(root: LinearLayout, title: String, call: () -> Unit) {
@@ -102,7 +114,7 @@ class AgentWorkspaceActivity : Activity() {
             text=title;isAllCaps=false;textSize=14f;minHeight=dp(48);setTextColor(android.graphics.Color.rgb(58,53,44))
             setPadding(dp(12),dp(4),dp(12),dp(4));contentDescription=title;setOnClickListener {safe(call)}
         }
-        controls += button; root.addView(button)
+        WeUi.style(button);controls += button; root.addView(button)
     }
     private fun safe(call: () -> Unit) { try { call() } catch (e: Exception) { Toast.makeText(this, e.message ?: "操作失败", Toast.LENGTH_LONG).show() } }
     private fun current() = workspaces[choice.selectedItemPosition.coerceAtLeast(0)]
@@ -113,7 +125,7 @@ class AgentWorkspaceActivity : Activity() {
     }
     private fun showInfo() {
         val workspace = current(); getPreferences(MODE_PRIVATE).edit().putString("workspace", workspace.id).apply()
-        info.text = "本机工作区：${workspace.name}\nSkills：${files.skillNames(workspace).joinToString().ifEmpty { "尚未导入" }}"
+        info.text = "就绪 · ${files.skillNames(workspace).size} 个工作区 Skill"
     }
     private fun resetRuntime() { runtime?.close(); runtime = null; runtimeWorkspace = "" }
     private fun run(text: String) {
@@ -147,6 +159,7 @@ class AgentWorkspaceActivity : Activity() {
                     } }
                 }
                 resetRuntime()
+                if(input.text.toString().trim()==text) input.text.clear()
                 openPaper(pdf, true)
             } catch (e: CancellationException) { resetRuntime(); throw e }
             catch (e: Exception) { output.append("\n未完成：${e.message?.take(160) ?: e.javaClass.simpleName}"); resetRuntime() }
@@ -232,6 +245,13 @@ class AgentWorkspaceActivity : Activity() {
             } catch (e: Exception) { Toast.makeText(this@AgentWorkspaceActivity, e.message ?: "导入失败", Toast.LENGTH_LONG).show() }
             finally { controls.forEach { it.isEnabled = true } }
         }
+    }
+    override fun onSaveInstanceState(state:Bundle) {state.putString("draft",input.text.toString());super.onSaveInstanceState(state)}
+    @Deprecated("Platform back callback")
+    override fun onBackPressed() {
+        if(job?.isActive==true) AlertDialog.Builder(this).setTitle("停止任务并返回？").setMessage("已生成的工作区文件会保留。")
+            .setNegativeButton("继续任务",null).setPositiveButton("停止并返回") {_,_->job?.cancel();finish()}.show()
+        else super.onBackPressed()
     }
     private val indexChanged: () -> Unit = { runOnUiThread {
         if (!isFinishing && job?.isActive != true && ::choice.isInitialized) {

@@ -31,6 +31,7 @@ class WorkspaceManagementUiTest {
             show.invoke(activity, 0)
             fun root(): View = ShadowAlertDialog.getLatestAlertDialog().window!!.decorView
             fun click(label: String) { views(root()).filterIsInstance<TextView>().first { it.text.toString() == label }.performClick() }
+            views(root()).first {it.contentDescription=="筛选与搜索"}.performClick()
             views(root()).filterIsInstance<EditText>().first { it.hint.toString() == "搜索工作区名称" }.setText("no-match-${UUID.randomUUID()}")
             assertTrue(views(root()).filterIsInstance<TextView>().any { it.text.toString() == "没有匹配的工作区。" })
             views(root()).filterIsInstance<EditText>().first().setText(w.name)

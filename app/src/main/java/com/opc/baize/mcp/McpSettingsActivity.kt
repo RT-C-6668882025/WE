@@ -1,5 +1,6 @@
 package com.opc.baize.mcp
 
+import com.opc.baize.ui.WeUi
 import android.app.Activity
 import android.content.*
 import android.os.*
@@ -16,7 +17,10 @@ class McpSettingsActivity : Activity() {
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
         page=McpWebPage.create(this,Bridge())
-        setContentView(page)
+        val root=android.widget.LinearLayout(this).apply {orientation=android.widget.LinearLayout.VERTICAL;setBackgroundColor(WeUi.paper)}
+        root.addView(WeUi.header(this,"连接 AI"))
+        root.addView(page,android.widget.LinearLayout.LayoutParams(-1,0,1f))
+        setContentView(root)
     }
     inner class Bridge : McpPageBridge {
         @JavascriptInterface override fun request(id:String,method:String,payload:String) {
@@ -78,6 +82,7 @@ internal object McpWebPage {
     fun create(context:android.content.Context,bridge:McpPageBridge,client:McpWebPageClient=McpWebPageClient(context)):WebView = WebView(context).apply {
         settings.javaScriptEnabled=true
         settings.domStorageEnabled=true
+        settings.textZoom=(context.resources.configuration.fontScale*100).toInt().coerceIn(100,200)
         settings.allowFileAccess=false;settings.allowContentAccess=false
         settings.mixedContentMode=WebSettings.MIXED_CONTENT_NEVER_ALLOW
         addJavascriptInterface(bridge,"WeNative")

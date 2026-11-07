@@ -1,5 +1,6 @@
 package com.opc.baize
 
+import com.opc.baize.ui.WeUi
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
@@ -172,8 +173,13 @@ class MainActivity : Activity() {
         (allSessions.find { it.id == savedSession && restorable != null } ?: restorable?.let {
             Session(savedSession!!, it.container.lastModified(), emptyList())
         })?.let { resumeSessionState(it) }
+        homeTab=savedInstanceState?.getInt("home_tab",0) ?: 0
+        workspaceFiltersExpanded=savedInstanceState?.getBoolean("workspace_filters",false) ?: false
+        workspaceScope=savedInstanceState?.getString("workspace_scope") ?: "active"
+        workspaceSearch=savedInstanceState?.getString("workspace_search") ?: ""
         buildUi()
         applyImmersive()
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         applyFontToBook()   // 套用用户字体偏好（首次为默认龙藏/38dp）
         idleDetector.setThreshold(idleMs())   // 套用停笔识别延迟偏好（默认 800ms）
 
@@ -203,19 +209,19 @@ class MainActivity : Activity() {
         restoreHomeDraft()
 
         // 重启恢复：有存档静态重铺停末页；否则引导语走书写节奏
-        book.post {
+        rootLayout.post {
             val stored = store.load()
             if (stored != null) book.loadFromStore(stored)
-            else book.resetBook(Texts.INTRO_TEXT)
+            // The home is the workspace hub; old reader content is restored only for archive compatibility.
             // 首次启动：弹欢迎 → 一键打开设置面板【设置】区，引导填大模型 API
             if (!prefs.getBoolean("firstRunDone", false)) showFirstRunGuide()
-            else if (savedInstanceState == null) showPanel(if(intent.getBooleanExtra("openSettings",false)) TAB_SETTINGS else TAB_WORKSPACES)
+            else if (intent.getBooleanExtra("openSettings",false)) showHomeTab(TAB_SETTINGS)
         }
     }
 
     override fun onNewIntent(next: android.content.Intent) {
         super.onNewIntent(next); intent=next
-        if(next.getBooleanExtra("openSettings",false)) showPanel(TAB_SETTINGS)
+        if(next.getBooleanExtra("openSettings",false)) showHomeTab(TAB_SETTINGS)
     }
 
     /** 首次打开引导：填过 API（或点“稍后”）即置 firstRunDone，之后不再弹。 */
@@ -225,7 +231,7 @@ class MainActivity : Activity() {
             .setMessage("Write Everything\n\n直接手写、绘画或打字开始。工作区保存任务，设置中可登录 ChatGPT 订阅或配置 API。")
             .setPositiveButton("去设置") { _, _ ->
                 prefs.edit().putBoolean("firstRunDone", true).apply()
-                showPanel(TAB_SETTINGS)
+                showHomeTab(TAB_SETTINGS)
             }
             .setNegativeButton("稍后") { _, _ ->
                 prefs.edit().putBoolean("firstRunDone", true).apply()
@@ -244,7 +250,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         runCatching {com.opc.baize.mcp.McpService.resume(this)}
-        providerSelector?.setSelection(if (prefs.getString("model_provider", "anthropic") == "subscription") 1 else 0)
+        providerSelector?.takeIf {!settingsDirty}?.setSelection(if (prefs.getString("model_provider", "anthropic") == "subscription") 1 else 0)
         // 回前台：HWEditView 重新进手写态，恢复驱动直写（onPause 时已退出）。
         hwLayer?.enterHandwriteState()
         // 直写模式：回前台启动轮询停笔检测（onPause 已停）。
@@ -279,140 +285,74 @@ class MainActivity : Activity() {
     /** 全程沉浸式全屏（原生版不再需要网页版的三击全屏） */
     @Suppress("DEPRECATION")
     private fun applyImmersive() {
-        if (Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false)
-            window.insetsController?.let {
-                it.hide(WindowInsets.Type.systemBars())
-                it.systemBarsBehavior =
-                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        } else {
-            window.decorView.systemUiVisibility =
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-        }
+        if(Build.VERSION.SDK_INT>=30) {
+            window.setDecorFitsSystemWindows(true)
+            window.insetsController?.show(WindowInsets.Type.systemBars())
+        } else window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or (if(Build.VERSION.SDK_INT>=27) View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0)
     }
 
     // ---------- UI 构建（纯代码布局，最短渲染路径） ----------
 
+    private data class SettingsDraft(val provider:Int,val key:String,val endpoint:String,val model:String,val fallback:String)
+    private var captureSettingsDraft:(()->SettingsDraft)?=null
+    private var restoredSettingsDraft=false
+    @Deprecated("Keep uncommitted form values in memory during configuration changes")
+    override fun onRetainNonConfigurationInstance():Any?=if(homeTab==TAB_SETTINGS && settingsDirty) captureSettingsDraft?.invoke() else null
+    private var settingsDirty=false
+    private var saveSettings:(()->Boolean)?=null
+    private var homeTab=0
+    private lateinit var homeBody:FrameLayout
+    private val homeTabs=mutableListOf<android.widget.Button>()
+    private fun showHomeTab(tab:Int,force:Boolean=false) {
+        if(::homeBody.isInitialized && homeBody.childCount>0 && tab==homeTab && !force) return
+        if(homeTab==TAB_SETTINGS && tab!=TAB_SETTINGS && settingsDirty) {
+            AlertDialog.Builder(this).setTitle("保存设置修改？").setMessage("当前修改尚未保存。")
+                .setNegativeButton("取消",null).setNeutralButton("放弃") {_,_->settingsDirty=false;showHomeTab(tab)}
+                .setPositiveButton("保存") {_,_->if(saveSettings?.invoke()==true) showHomeTab(tab)}.show()
+            return
+        }
+        homeTab=tab.coerceIn(0,2)
+        if(!::homeBody.isInitialized) return
+        homeBody.isFocusableInTouchMode=true;homeBody.requestFocus()
+        homeBody.removeAllViews()
+        val pane=when(homeTab) {TAB_SETTINGS->buildSettingsPane();TAB_ABOUT->buildAboutPane();else->buildWorkspacePane()}
+        WeUi.style(pane);homeBody.addView(pane,FrameLayout.LayoutParams(-1,-1))
+        homeTabs.forEachIndexed {index,button->button.isSelected=index==homeTab}
+    }
+    override fun onSaveInstanceState(state:Bundle) {
+        state.putBoolean("workspace_filters",workspaceFiltersExpanded);state.putInt("home_tab",homeTab);state.putString("workspace_scope",workspaceScope);state.putString("workspace_search",workspaceSearch)
+        super.onSaveInstanceState(state)
+    }
+    @Deprecated("Platform back callback")
+    override fun onBackPressed() {
+        if(homeTab!=TAB_WORKSPACES) showHomeTab(TAB_WORKSPACES) else super.onBackPressed()
+    }
     private fun buildUi() {
-        val dp = resources.displayMetrics.density
-        fun px(v: Float) = (v * dp).toInt()
-
-        val root = FrameLayout(this).apply { setBackgroundColor(0xFFF6F1E4.toInt()) }
-        rootLayout = root
-        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-
-        // 顶部书名区：白 泽 + 状态墨点
-        val header = FrameLayout(this).apply {
-            setPadding(px(22f), px(14f), px(22f), px(8f))
-        }
-        val title = TextView(this).apply {
-            text = "WE"
-            textSize = 24f
-            letterSpacing = 0.5f
-            setTextColor(0xFF3A352C.toInt())
-        }
-        statusDot = TextView(this).apply {
-            text = "○"
-            textSize = 18f
-            typeface = Typeface.SERIF
-            setTextColor(0xFF3A352C.toInt())
-        }
-        header.addView(title, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.START or Gravity.CENTER_VERTICAL))
-        header.addView(statusDot, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.END or Gravity.CENTER_VERTICAL))
-
-        val divider = View(this).apply { setBackgroundColor(0xFFD8CFB8.toInt()) }
-
-        book = BookView(this)
-
-        // 底部：页码角标居中 + 模型下载小灰字（左侧，一次性）
-        val footer = FrameLayout(this).apply { setPadding(px(22f), px(4f), px(22f), px(12f)) }
-        pageNum = TextView(this).apply {
-            textSize = 14f
-            letterSpacing = 0.35f
-            setTextColor(0xFFA39A87.toInt())
-            typeface = Typeface.SERIF
-            text = "壹 / 壹"
-        }
-        tipText = TextView(this).apply {
-            textSize = 13f
-            setTextColor(0xFFA39A87.toInt())
-            visibility = View.GONE
-        }
-        footer.addView(pageNum, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL))
-        footer.addView(tipText, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.START or Gravity.CENTER_VERTICAL))
-
-        column.addView(header, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        column.addView(divider, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 1))
-        column.addView(book, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-        column.addView(footer, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
-        ink = InkView(this)
-
-        // 左下角印章：一枚 64dp Logo，【单击】进入设置（老板 2026-07-08：双击改单击）。
-        // 放在最顶层（z 序最高），自己拦单击手势，不影响其余区域的书写/手势。
-        seal = ImageView(this).apply {
-            setImageResource(R.drawable.ic_seal)
-            alpha = 0.9f
-            contentDescription = "WE · 工作区、设置与关于"
-        }
-        val sealDetector = android.view.GestureDetector(
-            this,
-            object : android.view.GestureDetector.SimpleOnGestureListener() {
-                // 单击（抬手即触发，不再等双击判定）→ 打开面板，先落在【工作区】页
-                // （老板 2026-07-08：印章进工作区，再从 tab 切设置）
-                override fun onSingleTapUp(e: android.view.MotionEvent): Boolean {
-                    showPanel(TAB_WORKSPACES)
-                    return true
-                }
-                override fun onDown(e: android.view.MotionEvent): Boolean = true
+        rootLayout=FrameLayout(this).apply {setBackgroundColor(WeUi.paper)}
+        val root=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
+        val header=WeUi.header(this,"WE",null)
+        header.addView(WeUi.button(this,"画布") {if(canSwitchTask()) openWorkspaceCanvas()},LinearLayout.LayoutParams(-2,WeUi.dp(this,48)))
+        header.addView(WeUi.button(this,"对话") {
+            if(canSwitchTask()) {
+                val workspace=WorkspaceFiles(this).forSession(Session(curSessionId,curSessionTs,curTurns.toList()))
+                startActivity(android.content.Intent(this,com.opc.baize.agent.AgentWorkspaceActivity::class.java).putExtra("workspace",workspace.id))
             }
-        )
-        seal.setOnTouchListener { _, ev -> sealDetector.onTouchEvent(ev) }
-        val sealSize = px(64f)
-        val sealLp = FrameLayout.LayoutParams(sealSize, sealSize,
-            Gravity.START or Gravity.BOTTOM).apply {
-            leftMargin = px(12f); bottomMargin = px(12f)
+        },LinearLayout.LayoutParams(-2,WeUi.dp(this,48)))
+        root.addView(header,LinearLayout.LayoutParams(-1,-2))
+        homeBody=FrameLayout(this);root.addView(homeBody,LinearLayout.LayoutParams(-1,0,1f))
+        val navigation=LinearLayout(this);homeInputs=navigation;homeTabs.clear()
+        for((index,label) in arrayOf("工作区","设置","关于").withIndex()) {
+            val button=WeUi.button(this,label) {showHomeTab(index)};homeTabs+=button
+            navigation.addView(button,LinearLayout.LayoutParams(0,WeUi.dp(this,56),1f))
         }
-
-        root.addView(column, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        root.addView(ink, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; homeInputs = inputs
-        fun inputButton(label: String, action: () -> Unit) { inputs.addView(android.widget.Button(this).apply { text = label; minWidth=0; minimumWidth=0; textSize=13f;setPadding(px(8f),px(4f),px(8f),px(4f));setOnClickListener { action() } }) }
-        ink.visibility = View.GONE
-        inputButton("工作区") { showPanel(TAB_WORKSPACES) }
-        inputButton("画布") { if (canSwitchTask()) openWorkspaceCanvas() }
-        inputButton("对话") {
-            if (canSwitchTask()) {
-                val workspace = WorkspaceFiles(this).forSession(Session(curSessionId,curSessionTs,curTurns.toList()))
-                startActivity(android.content.Intent(this,com.opc.baize.agent.AgentWorkspaceActivity::class.java)
-                    .putExtra("workspace",workspace.id))
-            }
-        }
-        root.addView(inputs, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = px(10f); bottomMargin = px(8f) })
-        root.addView(seal, sealLp)
-        setContentView(root)
-
-        wireCallbacks()
+        root.addView(navigation)
+        rootLayout.addView(root,FrameLayout.LayoutParams(-1,-1))
+        // Historical reader state remains available to old archives, but is no longer a second home surface.
+        book=BookView(this).apply {visibility=View.GONE};rootLayout.addView(book,FrameLayout.LayoutParams(-1,-1));ink=InkView(this).apply {visibility=View.GONE}
+        statusDot=TextView(this);pageNum=TextView(this);tipText=TextView(this).apply {visibility=View.GONE}
+        seal=ImageView(this).apply {visibility=View.GONE}
+        rootLayout.addView(ink,FrameLayout.LayoutParams(-1,-1))
+        setContentView(rootLayout);showHomeTab(homeTab);wireCallbacks()
     }
 
     private fun wireCallbacks() {
@@ -1057,7 +997,7 @@ class MainActivity : Activity() {
     private val paperBg = 0xFFF6F1E4.toInt()
     private val inkDark = 0xFF1C1A16.toInt()
     private val inkGray = 0xFF6B6355.toInt()
-    private val inkFaint = 0xFFA39A87.toInt()
+    private val inkFaint = 0xFF69604E.toInt()
     private val hairline = 0xFFD8CFB8.toInt()
 
     private fun pxOf(v: Float): Int = (v * resources.displayMetrics.density).toInt()
@@ -1075,6 +1015,7 @@ class MainActivity : Activity() {
             setBackgroundColor(paperBg)
         }
 
+        root.addView(WeUi.header(this,"WE") {panelDialog?.dismiss()})
         // 顶部把手 + 分段 tab
         val handle = View(this).apply { setBackgroundColor(hairline) }
         root.addView(handle, LinearLayout.LayoutParams(pxOf(44f), pxOf(4f)).apply {
@@ -1092,15 +1033,16 @@ class MainActivity : Activity() {
                 val tv = tabBar.getChildAt(i) as TextView
                 val active = i == t
                 tv.setTextColor(if (active) inkDark else inkFaint)
-                tv.setBackgroundColor(if (active) 0xFFEDE6D3.toInt() else 0x00000000)
+                tv.isSelected=active
                 tv.typeface = if (active) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             }
             body.removeAllViews()
-            body.addView(when (t) {
+            val content=when (t) {
                 TAB_SETTINGS -> buildSettingsPane()
                 TAB_ABOUT -> buildAboutPane()
                 else -> buildWorkspacePane()
-            })
+            }
+            WeUi.style(content);body.addView(content)
         }
 
         val labels = arrayOf("工作区", "设置", "关于")
@@ -1128,10 +1070,11 @@ class MainActivity : Activity() {
         // 底部对齐、半屏高、铺满宽（BottomSheet 观感）
         dialog.window?.let { w ->
             w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(paperBg))
+            WeUi.style(root)
             val lp = w.attributes
             lp.gravity = Gravity.BOTTOM
-            lp.width = android.view.WindowManager.LayoutParams.MATCH_PARENT
-            lp.height = (resources.displayMetrics.heightPixels * 0.62f).toInt()
+            lp.width = minOf(resources.displayMetrics.widthPixels,pxOf(720f))
+            lp.height = (resources.displayMetrics.heightPixels * 0.90f).toInt()
             w.attributes = lp
         }
         selectTab(tab)
@@ -1142,6 +1085,10 @@ class MainActivity : Activity() {
     private fun scrollPane(content: View): View =
         android.widget.ScrollView(this).apply {
             isFillViewport = true
+            // Keep the initial viewport at the top instead of focusing an off-screen editor.
+            descendantFocusability = android.view.ViewGroup.FOCUS_BEFORE_DESCENDANTS
+            isFocusableInTouchMode = true
+            requestFocus()
             addView(content, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         }
@@ -1206,7 +1153,7 @@ class MainActivity : Activity() {
         val curFont = fontAsset()
         fonts.forEachIndexed { i, (name, asset) ->
             val rb = android.widget.RadioButton(this).apply {
-                text = name; textSize = 15f; id = i + 1
+                text = name; textSize = 15f; id = View.generateViewId();isSaveEnabled=false
                 isChecked = asset == curFont
                 setOnClickListener {
                     prefs.edit().putString("font_asset", asset).apply()
@@ -1276,6 +1223,7 @@ class MainActivity : Activity() {
         gap(8f)
 
         val keyEdit = android.widget.EditText(this).apply {
+            isSaveEnabled=false
             setSingleLine()   // 先设单行——放在 inputType 之前，否则会清掉密码属性
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
@@ -1284,7 +1232,7 @@ class MainActivity : Activity() {
             transformationMethod =
                 android.text.method.PasswordTransformationMethod.getInstance()
             setText(prefs.getString("api_key", "") ?: "")
-            hint = "sk-xxxxxx（在 DeepSeek 开放平台获取）"
+            hint = "输入当前服务的 API 密钥"
         }
         col.addView(TextView(this).apply { text = "API 密钥"; textSize = 13f; setTextColor(inkGray) })
         col.addView(keyEdit)
@@ -1324,7 +1272,10 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
         gap(16f)
 
-        appearanceViews.forEach {col.addView(it)}
+        val appearance=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;visibility=View.GONE}
+        appearanceViews.forEach {appearance.addView(it)}
+        col.addView(WeUi.disclosure(this,"阅读与旧版手写选项",appearance))
+        col.addView(appearance)
         // (c) 手写识别降级通道（可选）：无 Google 服务的设备（华为等）本机识别不可用，
         //     可自建 server.py 识别服务并在此填地址；留空 = 只用本机 ML Kit。
         col.addView(sectionTitle("手写识别（可选）"))
@@ -1342,7 +1293,7 @@ class MainActivity : Activity() {
         gap(14f)
 
         val saveBtn = android.widget.Button(this).apply {
-            text = "保存"
+            text = "保存";tag=WeUi.PRIMARY
             setOnClickListener {
                 prefs.edit()
                     .putString("model_provider", if (providerChoices.selectedItemPosition == 1) "subscription" else "anthropic")
@@ -1353,17 +1304,45 @@ class MainActivity : Activity() {
                         .ifEmpty { ModelConfig.DEFAULT_MODEL })
                     .putString("fallback_url", fallbackEdit.text.toString().trim())
                     .apply()
+                settingsDirty=false
                 android.widget.Toast.makeText(this@MainActivity, "已保存", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
         col.addView(saveBtn, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
+        val retained=lastNonConfigurationInstance as? SettingsDraft
+        if(retained!=null && !restoredSettingsDraft) {
+            restoredSettingsDraft=true;providerChoices.setSelection(retained.provider)
+            keyEdit.setText(retained.key);endpointEdit.setText(retained.endpoint);modelEdit.setText(retained.model);fallbackEdit.setText(retained.fallback)
+        }
+        captureSettingsDraft={SettingsDraft(providerChoices.selectedItemPosition,keyEdit.text.toString(),endpointEdit.text.toString(),modelEdit.text.toString(),fallbackEdit.text.toString())}
+        fun changed() {
+            settingsDirty=keyEdit.text.toString().trim()!=(prefs.getString("api_key","") ?: "") ||
+                endpointEdit.text.toString().trim().ifEmpty {ModelConfig.DEFAULT_ENDPOINT}!=(prefs.getString("api_endpoint",ModelConfig.DEFAULT_ENDPOINT) ?: ModelConfig.DEFAULT_ENDPOINT) ||
+                modelEdit.text.toString().trim().ifEmpty {ModelConfig.DEFAULT_MODEL}!=(prefs.getString("api_model",ModelConfig.DEFAULT_MODEL) ?: ModelConfig.DEFAULT_MODEL) ||
+                fallbackEdit.text.toString().trim()!=(prefs.getString("fallback_url",BuildConfig.DEFAULT_FALLBACK_ASK_URL) ?: BuildConfig.DEFAULT_FALLBACK_ASK_URL) ||
+                (providerChoices.selectedItemPosition==1)!=(prefs.getString("model_provider","anthropic")=="subscription")
+        }
+        val edits=object:android.text.TextWatcher {
+            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int) {}
+            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int) {changed()}
+            override fun afterTextChanged(s:android.text.Editable?) {}
+        }
+        listOf(keyEdit,endpointEdit,modelEdit,fallbackEdit).forEach {it.addTextChangedListener(edits)}
+        providerChoices.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long) {changed()}
+            override fun onNothingSelected(parent:android.widget.AdapterView<*>?) {}
+        }
+        changed()
+        saveSettings={saveBtn.performClick();!settingsDirty}
+        WeUi.style(col)
         return scrollPane(col)
     }
 
     // ---------- 面板【工作区】 ----------
 
+    private var workspaceFiltersExpanded=false
     private var workspaceScope = "active"
     private var workspaceSearch = ""
     private var workspaceManaging = false
@@ -1377,9 +1356,14 @@ class MainActivity : Activity() {
         }
         val files = WorkspaceFiles(this)
         allSessions.forEach { files.forSession(it) }
-        val toolbar = LinearLayout(this)
+        val filterPane=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL
+            visibility=if(workspaceFiltersExpanded || workspaceSearch.isNotBlank() || workspaceScope!="active") View.VISIBLE else View.GONE
+        }
+        val filterButton=WeUi.disclosure(this,"筛选",filterPane).apply {contentDescription="筛选与搜索"}
+        val toolbar = LinearLayout(this).apply {gravity=Gravity.CENTER_VERTICAL}
         toolbar.addView(android.widget.Button(this).apply {
-            text = "＋ 新工作区"
+            text = "＋ 新工作区";tag=WeUi.PRIMARY
             setOnClickListener {
                 if (!canSwitchTask()) return@setOnClickListener
                 cancelIdleTimer(); clearWritingSurface()
@@ -1389,10 +1373,17 @@ class MainActivity : Activity() {
                 book.resetBook(Texts.INTRO_TEXT); setStatus("idle"); panelDialog?.dismiss()
                 openWorkspaceCanvas(created)
             }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
+        }, LinearLayout.LayoutParams(-2,-2))
+        toolbar.addView(View(this),LinearLayout.LayoutParams(0,1,1f))
+        filterButton.setOnClickListener {
+            workspaceFiltersExpanded=filterPane.visibility!=View.VISIBLE
+            filterPane.visibility=if(workspaceFiltersExpanded) View.VISIBLE else View.GONE
+            filterButton.isSelected=workspaceFiltersExpanded;filterButton.text=if(workspaceFiltersExpanded) "筛选 ▴" else "筛选 ▾"
+        }
+        toolbar.addView(filterButton)
         toolbar.addView(android.widget.Button(this).apply {
             text = if (workspaceManaging) "完成管理" else "管理"
-            setOnClickListener { workspaceManaging = !workspaceManaging; selectedWorkspaces.clear(); showPanel(TAB_WORKSPACES) }
+            setOnClickListener { workspaceManaging = !workspaceManaging; selectedWorkspaces.clear(); refreshWorkspaceList() }
         })
         col.addView(toolbar)
         val filters = LinearLayout(this)
@@ -1400,19 +1391,20 @@ class MainActivity : Activity() {
             filters.addView(android.widget.Button(this).apply {
                 text = title; isSelected = workspaceScope == key
                 if (isSelected) setTypeface(null, Typeface.BOLD)
-                setOnClickListener { workspaceScope = key; selectedWorkspaces.clear(); showPanel(TAB_WORKSPACES) }
+                setOnClickListener { workspaceScope = key; selectedWorkspaces.clear(); refreshWorkspaceList() }
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        col.addView(filters)
+        filterPane.addView(filters)
         val search = android.widget.EditText(this).apply {
             hint = "搜索工作区名称"; isSingleLine = true; setText(workspaceSearch)
             contentDescription = "搜索工作区名称"
-        }; col.addView(search)
+        }; filterPane.addView(search)
         val sort = android.widget.Spinner(this).apply {
+            contentDescription="工作区排序"
             adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
                 listOf("最近使用 · 置顶优先", "名称 · 置顶优先", "最早使用 · 置顶优先"))
             setSelection(prefs.getInt("workspace_sort", 0).coerceIn(0, 2))
-        }; col.addView(sort)
+        }; filterPane.addView(sort);col.addView(filterPane)
         val count = TextView(this).apply { textSize = 13f; setTextColor(inkGray) }; col.addView(count)
         val batch = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; col.addView(batch)
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; col.addView(rows)
@@ -1421,7 +1413,7 @@ class MainActivity : Activity() {
             val order = listOf("recent", "name", "oldest")[sort.selectedItemPosition.coerceIn(0, 2)]
             val workspaces = files.query(workspaceScope, workspaceSearch, order)
             selectedWorkspaces.retainAll(workspaces.map { it.id }.toSet())
-            count.text = "${workspaces.size} 个工作区" + if (workspaceManaging) " · 已选 ${selectedWorkspaces.size} 个" else ""
+            count.text = "${when(workspaceScope) {"archived"->"已归档";"trash"->"回收站";else->"进行中"}} · ${workspaces.size} 个工作区" + if (workspaceManaging) " · 已选 ${selectedWorkspaces.size} 个" else ""
             if (workspaceManaging) {
                 val select = android.widget.Button(this).apply {
                     text = if (selectedWorkspaces.size == workspaces.size && workspaces.isNotEmpty()) "取消全选" else "全选当前列表"
@@ -1489,6 +1481,7 @@ class MainActivity : Activity() {
                 } }
             })
             rows.addView(row)
+            WeUi.style(row)
             rows.addView(View(this).apply { setBackgroundColor(hairline) }, LinearLayout.LayoutParams(-1, 1))
             }
         }
@@ -1512,7 +1505,11 @@ class MainActivity : Activity() {
             }
         })
         render()
+        WeUi.style(col)
         return scrollPane(col)
+    }
+    private fun refreshWorkspaceList() {
+        if(panelDialog?.isShowing==true) showPanel(TAB_WORKSPACES) else showHomeTab(TAB_WORKSPACES,true)
     }
     private fun manageWorkspaces(workspaces: List<WeWorkspace>, action: String) {
         if (workspaces.isEmpty() || !canSwitchTask()) return
@@ -1525,8 +1522,8 @@ class MainActivity : Activity() {
                     if (hwActive()) { idleDetector.reset(); pollWasGrowing = false }
                     startNewSession(); book.resetBook(Texts.INTRO_TEXT); setStatus("idle")
                 }
-                selectedWorkspaces.clear(); showPanel(TAB_WORKSPACES)
-            } catch (e: Exception) { android.widget.Toast.makeText(this, "管理未全部完成：${e.message}", android.widget.Toast.LENGTH_LONG).show(); showPanel(TAB_WORKSPACES) }
+                selectedWorkspaces.clear(); refreshWorkspaceList()
+            } catch (e: Exception) { android.widget.Toast.makeText(this, "管理未全部完成：${e.message}", android.widget.Toast.LENGTH_LONG).show(); refreshWorkspaceList() }
         }
         if (action == "trash") AlertDialog.Builder(this).setTitle("移到回收站？")
             .setMessage("将移入 ${workspaces.size} 个工作区。对话、资料和笔迹保留，可在回收站恢复。")
@@ -1576,11 +1573,13 @@ class MainActivity : Activity() {
                     9 -> openWorkspaceCanvas(workspace,true)
                     3 -> {
                         val editor = android.widget.EditText(this).apply { setText(workspace.name) }
-                        AlertDialog.Builder(this).setTitle("工作区名称").setView(editor).setNegativeButton("取消", null)
-                            .setPositiveButton("保存") { _, _ ->
-                                try { WorkspaceFiles(this).rename(workspace, editor.text.toString()); showPanel(TAB_WORKSPACES) }
-                                catch (e: Exception) { android.widget.Toast.makeText(this, e.message, android.widget.Toast.LENGTH_LONG).show() }
-                            }.show()
+                        AlertDialog.Builder(this).setTitle("工作区名称").setView(editor).setNegativeButton("取消",null)
+                            .setPositiveButton("保存",null).create().apply {
+                                show();getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                                    try {WorkspaceFiles(this@MainActivity).rename(workspace,editor.text.toString());dismiss();refreshWorkspaceList()}
+                                    catch(e:Exception) {editor.error=e.message ?: "请检查名称"}
+                                }
+                            }
                     }
                 }
             }.show()
@@ -1677,8 +1676,9 @@ class MainActivity : Activity() {
         para("· 手写识别：Google ML Kit Digital Ink Recognition")
         para("· 界面框架：AndroidX")
         para("· Android Agent Runtime：NoHarry/android-agent-runtime（MIT）")
-        para("· 本应用手写功能针对华为墨水屏进行优化，仅调用设备既有系统能力，非华为设备手写屏" +
-            "自动调用纯自绘 + 运动预测算法，可能略有延时")
+        para("· 绘画引擎：Drawpile / Drawdance")
+        para("· 矢量内容：AndroidSVG；图片方向：AndroidX ExifInterface")
+        WeUi.style(col)
         return scrollPane(col)
     }
 }

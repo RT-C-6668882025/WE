@@ -1,5 +1,6 @@
 package com.opc.baize.subscription
 
+import com.opc.baize.ui.WeUi
 import android.app.Activity
 import android.os.Bundle
 import android.content.Intent
@@ -38,30 +39,33 @@ class SubscriptionSettingsActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); gateway = SubscriptionGateway.get(this)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24) }
-        setContentView(ScrollView(this).apply { addView(root) })
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(WeUi.dp(this@SubscriptionSettingsActivity,16),WeUi.dp(this@SubscriptionSettingsActivity,8),WeUi.dp(this@SubscriptionSettingsActivity,16),WeUi.dp(this@SubscriptionSettingsActivity,24)) }
+        val screen=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(WeUi.paper)}
+        screen.addView(WeUi.header(this,"AI 模型设置"))
+        screen.addView(ScrollView(this).apply {addView(root)},LinearLayout.LayoutParams(-1,0,1f))
+        setContentView(screen)
         fun label(text: String, size: Float = 15f) = TextView(this).apply { this.text = text; textSize = size; root.addView(this) }
-        label("ChatGPT 订阅模型", 24f)
-        label("版本：${com.opc.baize.BuildConfig.VERSION_NAME}", 12f)
-        label("列表来自当前账号，不内置固定模型。文字和图片/手写可分别选择；图片能力以实际测试为准。登录信息通过 Android Keystore 加密保存在本机，退出页面或重启应用会恢复；明确退出登录会删除本地凭据。")
+        val help=label("列表来自当前账号，不内置固定模型。文字和图片/手写可分别选择；图片能力以实际测试为准。登录信息通过 Android Keystore 加密保存在本机，退出页面或重启应用会恢复；明确退出登录会删除本地凭据。").apply {visibility=View.GONE}
         session = label(""); active = label("")
-        status = label("先登录，再刷新列表、选择模型并保存。已有会话不必重复登录。").apply { setTextIsSelectable(true) }
+        status = label("登录后刷新列表，选择模型并保存。").apply { setTextIsSelectable(true) }
+        root.removeView(session);root.removeView(active);root.removeView(status)
         button(root, "Continue with ChatGPT") {
             if (gateway.isAuthorized) status.text = "已登录，可直接使用。需要更换账号时，请先退出当前会话。"
             else { gateway.startSignIn(); observedLogin = -1; update() }
         }
+        root.addView(session);root.addView(active);root.addView(status)
         action(root, "刷新账号模型列表") { val found = gateway.catalog(); "已读取 ${found.size} 个模型。请选择文字和图片模型并保存。" }
         label("文字回答模型")
-        textChoice = Spinner(this); root.addView(textChoice)
+        textChoice = Spinner(this).apply {contentDescription="文字回答模型"}; root.addView(textChoice)
         label("图片 / 手写识别 / PDF 批改模型")
-        imageChoice = Spinner(this); root.addView(imageChoice)
+        imageChoice = Spinner(this).apply {contentDescription="图片与手写模型"}; root.addView(imageChoice)
         directVision = CheckBox(this).apply { text = "直接使用订阅图片识别（跳过本机识别等待）"; isChecked = SubscriptionSelection.read(this@SubscriptionSettingsActivity).directVision }; root.addView(directVision)
         label("关闭时优先本机识别，失败后使用订阅图片。图片转写和文字回答分别请求，均使用订阅额度。")
         button(root, "保存选择并启用订阅") {
             try {
                 check(gateway.isAuthorized) { "请先完成登录" }
                 SubscriptionSelection.save(this, selected(), catalog)
-                status.text = "已保存并启用。返回墨灵即可书写；PDF 使用图片模型。"; update()
+                status.text = "已保存并启用。返回 WE即可书写；PDF 使用图片模型。"; update()
             } catch (e: Exception) { status.text = if (!gateway.isAuthorized) "请先完成登录。" else "请从当前账号列表中选择模型后保存。" }
         }
         tests = label("")
@@ -115,8 +119,12 @@ class SubscriptionSettingsActivity : Activity() {
         }; root.addView(recover)
         cancel = Button(this).apply { text = "取消正在进行的授权"; setOnClickListener { gateway.cancel(); observedLogin = -1; update() } }; root.addView(cancel)
         root.addView(Button(this).apply { text = "ChatGPT 用量设置"; setOnClickListener { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/settings/usage"))) } catch (e: Exception) { status.text = "请手动打开 ChatGPT 设置 → 用量。" } } })
-        root.addView(Button(this).apply { text = "返回墨灵"; setOnClickListener { finish() } })
-        diagnostics = label("").apply { setTextIsSelectable(true) }
+
+        diagnostics=label("").apply {setTextIsSelectable(true);visibility=View.GONE;textSize=12f;setTextColor(WeUi.secondary)}
+        root.removeView(diagnostics);root.addView(WeUi.disclosure(this,"诊断详情",diagnostics));root.addView(diagnostics)
+        root.removeView(help);root.addView(WeUi.disclosure(this,"使用说明",help));root.addView(help)
+        status.accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE
+        WeUi.style(screen)
         showModels(gateway.cachedCatalog())
     }
     private fun selected(): SubscriptionChoice {
@@ -144,10 +152,11 @@ class SubscriptionSettingsActivity : Activity() {
         val url = if (resumed) gateway.takeBrowserUrl() else null
         if (url != null) try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
         catch (e: Exception) { gateway.cancel(); status.text = "无法打开系统浏览器，请重新登录。" }
-        session.text = if (running) gateway.loginProgress() else if (gateway.isAuthorized) "登录：已通过订阅授权；请求前自动检查令牌刷新，无需重复登录。" else "登录：未连接或需要重新登录。"
+        session.text = if (running) gateway.loginProgress() else if (gateway.isAuthorized) "已登录 · 会话自动恢复" else "未登录"
         val choice = SubscriptionSelection.read(this)
         val selectedProvider = getSharedPreferences("moling", MODE_PRIVATE).getString("model_provider", "anthropic")
         active.text = "生效通道：${if (selectedProvider == "subscription") "ChatGPT 订阅" else "原 API"}\n已保存文字：${choice.textModel.ifBlank { "未选择" }}\n已保存图片：${choice.effectiveImageModel().ifBlank { "未选择" }}"
+        active.visibility=if(choice.textModel.isBlank() && !gateway.isAuthorized) View.GONE else View.VISIBLE
         val version = gateway.loginVersion(); val result = gateway.loginResult()
         if (!busy && !running && version != observedLogin && result.isNotEmpty()) {
             status.text = result + if (gateway.isAuthorized) "\n请刷新账号模型列表并选择模型。" else ""; observedLogin = version
@@ -160,7 +169,7 @@ class SubscriptionSettingsActivity : Activity() {
         showChecks(); diagnostics.text = gateway.diagnostics()
     }
     private fun button(root: LinearLayout, label: String, call: () -> Unit) {
-        val b = Button(this).apply { text = label; setOnClickListener { call() } }; buttons.add(b); root.addView(b)
+        val b = Button(this).apply { text = label;if(label=="Continue with ChatGPT" || label=="保存选择并启用订阅") tag=WeUi.PRIMARY; setOnClickListener { call() } }; buttons.add(b); root.addView(b)
     }
     private fun action(root: LinearLayout, label: String, call: () -> String) = button(root, label) { task(call) }
     private fun task(call: () -> String) {
