@@ -308,7 +308,7 @@ class DrawingDeviceTest {
                     val w=(size.first*density).toInt();val h=(size.second*density).toInt()
                     repeat(3) {root.measure(android.view.View.MeasureSpec.makeMeasureSpec(w,android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(h,android.view.View.MeasureSpec.EXACTLY));root.layout(0,0,w,h)}
                     val all=views(root)
-                    val required=listOf("画笔","框选","橡皮","笔刷","图层","发送")+if(label=="landscape") listOf("撤销","重做") else emptyList()
+                    val required=listOf("画笔","框选","橡皮","笔刷","图层","发送")+if(label=="landscape") listOf("删除上一步","回溯上一步") else emptyList()
                     for(name in required) {
                         val button=all.filterIsInstance<android.widget.Button>().filter {it.isShown}.single {it.contentDescription?.toString()==name || (name=="发送" && it.text=="发送")}
                         val bounds=android.graphics.Rect();button.getDrawingRect(bounds);root.offsetDescendantRectToMyCoords(button,bounds)
