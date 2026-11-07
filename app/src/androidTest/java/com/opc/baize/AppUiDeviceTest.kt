@@ -90,6 +90,45 @@ class AppUiDeviceTest {
             }
         } finally {scale(oldScale);sample.container.deleteRecursively()}
     }
+    @Test fun conversationDraftsStayWithTheirWorkspace() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        val files=com.opc.baize.agent.WorkspaceFiles(context)
+        val first=files.create("草稿甲-${System.nanoTime()}")
+        val second=files.create("草稿乙-${System.nanoTime()}")
+        val activity=instrumentation.startActivitySync(Intent(context,AgentWorkspaceActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("workspace",first.id)) as Activity
+        try {
+            instrumentation.waitForIdleSync()
+            fun select(id:String) {
+                instrumentation.runOnMainSync {
+                    val spinner=views(activity.window.decorView).filterIsInstance<android.widget.Spinner>().single()
+                    spinner.setSelection(files.list().indexOfFirst {it.id==id})
+                }
+                instrumentation.waitForIdleSync()
+            }
+            instrumentation.runOnMainSync {
+                views(activity.window.decorView).filterIsInstance<android.widget.EditText>().single().setText("只给甲的需求")
+            }
+            select(second.id)
+            instrumentation.runOnMainSync {
+                val input=views(activity.window.decorView).filterIsInstance<android.widget.EditText>().single()
+                assertEquals("",input.text.toString());input.setText("只给乙的需求")
+            }
+            select(first.id)
+            instrumentation.runOnMainSync {
+                assertEquals("只给甲的需求",views(activity.window.decorView).filterIsInstance<android.widget.EditText>().single().text.toString())
+                val state=android.os.Bundle()
+                instrumentation.callActivityOnSaveInstanceState(activity,state)
+                assertEquals(first.id,state.getString("selected_workspace"))
+                assertEquals("只给乙的需求",state.getBundle("workspace_drafts")?.getString(second.id))
+            }
+        } finally {
+            instrumentation.runOnMainSync {activity.finish()}
+            first.container.deleteRecursively();second.container.deleteRecursively()
+        }
+    }
+
     @Test fun connectionScreenHasBackNavigationAndAccessibleWebActions() {
         val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
         val activity=instrumentation.startActivitySync(Intent(context,com.opc.baize.mcp.McpSettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as Activity
