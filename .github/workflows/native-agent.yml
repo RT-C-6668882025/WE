@@ -58,7 +58,8 @@ jobs:
           cmake --build build/drawing-native --parallel 2
           ctest --test-dir build/drawing-native --output-on-failure
       - name: Verify the paired MCP relay and WordTok browser contract
-        run: python3 -m unittest discover -s tools -p 'test_preview_signing.py'
+        run: |
+          python3 -m unittest discover -s tools -p 'test_preview_signing.py'
           node --test mcp/relay.test.mjs tools/check-wordtok-connection.test.mjs tools/check-we-deploy.test.mjs tools/check-mcp-page-ui.test.mjs
       - name: Unit tests, lint, app and device test builds
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --no-daemon
