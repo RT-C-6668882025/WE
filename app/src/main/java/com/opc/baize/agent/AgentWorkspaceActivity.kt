@@ -28,6 +28,8 @@ class AgentWorkspaceActivity : Activity() {
     private var runtimeWorkspace = ""
     private var job: Job? = null
     private var openingPage=false
+    private var draftWorkspaceId=""
+    private val drafts=mutableMapOf<String,String>()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); files = WorkspaceFiles(this)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12),0,dp(12),dp(8)) }
@@ -99,13 +101,23 @@ class AgentWorkspaceActivity : Activity() {
         WeUi.style(root);WeUi.style(settings)
         choice.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                val selectedId=current().id
+                if(draftWorkspaceId!=selectedId) {
+                    if(draftWorkspaceId.isNotEmpty()) drafts[draftWorkspaceId]=input.text.toString()
+                    input.setText(drafts[selectedId].orEmpty())
+                    draftWorkspaceId=selectedId
+                }
                 resetRuntime(); showInfo()
                 output.text = current().transcript.takeIf { it.isFile }?.readText()?.takeLast(24000) ?: ""
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         if (files.list().isEmpty()) files.create("我的工作区")
-        reload(intent.getStringExtra("workspace") ?: getPreferences(MODE_PRIVATE).getString("workspace", ""))
+        savedInstanceState?.getBundle("workspace_drafts")?.let { saved ->
+            saved.keySet().forEach { drafts[it]=saved.getString(it).orEmpty() }
+        }
+        reload(savedInstanceState?.getString("selected_workspace") ?: intent.getStringExtra("workspace") ?: getPreferences(MODE_PRIVATE).getString("workspace", ""))
+        draftWorkspaceId=current().id
         input.setText(savedInstanceState?.getString("draft") ?: intent.getStringExtra("feedback").orEmpty())
     }
     private fun dp(value:Int)=(value*resources.displayMetrics.density).toInt()
@@ -120,6 +132,7 @@ class AgentWorkspaceActivity : Activity() {
     private fun current() = workspaces[choice.selectedItemPosition.coerceAtLeast(0)]
     private fun reload(selected: String? = null) {
         workspaces = files.list()
+        if(workspaces.isEmpty()) { files.create("我的工作区");workspaces=files.list() }
         choice.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, workspaces.map { it.name })
         choice.setSelection(workspaces.indexOfFirst { it.id == selected }.coerceAtLeast(0)); showInfo()
     }
@@ -163,7 +176,7 @@ class AgentWorkspaceActivity : Activity() {
                 openPaper(pdf, true)
             } catch (e: CancellationException) { resetRuntime(); throw e }
             catch (e: Exception) { output.append("\n未完成：${e.message?.take(160) ?: e.javaClass.simpleName}"); resetRuntime() }
-            finally {controls.forEach {it.isEnabled=true};stop.text="发送";choice.post {indexChanged()}}
+            finally {if(!openingPage) controls.forEach {it.isEnabled=true};stop.text="发送";choice.post {indexChanged()}}
         }
     }
     private fun confirm(owner: AgentRuntime, pending: PendingConfirmation, tool: String) {
@@ -196,6 +209,7 @@ class AgentWorkspaceActivity : Activity() {
         if(openingPage) return
         openingPage=true
         val workspace = current()
+        controls.forEach {it.isEnabled=false}
         scope.launch {
             try {
                 val page = withContext(Dispatchers.IO) { WorkspaceDrawing.open(workspace) }
@@ -207,7 +221,7 @@ class AgentWorkspaceActivity : Activity() {
                     .putExtra("workspace",workspace.id).putExtra("generatedPdf",pdf.path)
                     .putExtra("sourcePath",WorkspaceDrawing.sourcePath(workspace,pdf)))
             } catch (e: Exception) { output.append("\n打开画布失败：${e.message}") }
-            finally {openingPage=false}
+            finally {openingPage=false;controls.forEach {it.isEnabled=true};indexChanged()}
         }
     }
     private fun openPaper(source: java.io.File?, spacious: Boolean) {
@@ -246,7 +260,13 @@ class AgentWorkspaceActivity : Activity() {
             finally { controls.forEach { it.isEnabled = true } }
         }
     }
-    override fun onSaveInstanceState(state:Bundle) {state.putString("draft",input.text.toString());super.onSaveInstanceState(state)}
+    override fun onSaveInstanceState(state:Bundle) {
+        state.putString("draft",input.text.toString())
+        state.putString("selected_workspace",current().id)
+        if(draftWorkspaceId.isNotEmpty()) drafts[draftWorkspaceId]=input.text.toString()
+        state.putBundle("workspace_drafts",Bundle().apply {drafts.forEach {(id,text)->putString(id,text)}})
+        super.onSaveInstanceState(state)
+    }
     @Deprecated("Platform back callback")
     override fun onBackPressed() {
         if(job?.isActive==true) AlertDialog.Builder(this).setTitle("停止任务并返回？").setMessage("已生成的工作区文件会保留。")
@@ -254,7 +274,7 @@ class AgentWorkspaceActivity : Activity() {
         else super.onBackPressed()
     }
     private val indexChanged: () -> Unit = { runOnUiThread {
-        if (!isFinishing && job?.isActive != true && ::choice.isInitialized) {
+        if (!isFinishing && job?.isActive != true && !openingPage && ::choice.isInitialized) {
             val selected = workspaces.getOrNull(choice.selectedItemPosition)?.id
             if (files.list() != workspaces) reload(selected)
         }
