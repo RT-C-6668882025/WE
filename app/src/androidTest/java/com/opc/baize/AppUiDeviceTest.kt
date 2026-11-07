@@ -50,6 +50,11 @@ class AppUiDeviceTest {
                         if(name=="about") instrumentation.runOnMainSync {
                             views(activity.window.decorView).filterIsInstance<Button>().single {it.text=="关于"}.performClick()
                         }
+                        if(name=="settings") instrumentation.runOnMainSync {
+                            val scroll=views(activity.window.decorView).filterIsInstance<android.widget.ScrollView>().single()
+                            assertEquals("Settings must open at the top at font $font",0,scroll.scrollY)
+                            assertFalse("Settings must not auto-focus an input",activity.currentFocus is android.widget.EditText)
+                        }
                         instrumentation.runOnMainSync {
                             assertEquals(font,activity.resources.configuration.fontScale,.05f)
                             val root=(activity.findViewById<ViewGroup>(android.R.id.content)).getChildAt(0) as ViewGroup

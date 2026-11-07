@@ -1085,6 +1085,10 @@ class MainActivity : Activity() {
     private fun scrollPane(content: View): View =
         android.widget.ScrollView(this).apply {
             isFillViewport = true
+            // Keep the initial viewport at the top instead of focusing an off-screen editor.
+            descendantFocusability = android.view.ViewGroup.FOCUS_BEFORE_DESCENDANTS
+            isFocusableInTouchMode = true
+            requestFocus()
             addView(content, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         }
