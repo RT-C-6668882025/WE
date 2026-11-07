@@ -332,12 +332,6 @@ class MainActivity : Activity() {
         val root=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
         val header=WeUi.header(this,"WE",null)
         header.addView(WeUi.button(this,"画布") {if(canSwitchTask()) openWorkspaceCanvas()},LinearLayout.LayoutParams(-2,WeUi.dp(this,48)))
-        header.addView(WeUi.button(this,"对话") {
-            if(canSwitchTask()) {
-                val workspace=WorkspaceFiles(this).forSession(Session(curSessionId,curSessionTs,curTurns.toList()))
-                startActivity(android.content.Intent(this,com.opc.baize.agent.AgentWorkspaceActivity::class.java).putExtra("workspace",workspace.id))
-            }
-        },LinearLayout.LayoutParams(-2,WeUi.dp(this,48)))
         root.addView(header,LinearLayout.LayoutParams(-1,-2))
         homeBody=FrameLayout(this);root.addView(homeBody,LinearLayout.LayoutParams(-1,0,1f))
         val navigation=LinearLayout(this);homeInputs=navigation;homeTabs.clear()
@@ -1542,7 +1536,7 @@ class MainActivity : Activity() {
         val management = WorkspaceFiles(this).state(workspace)
         AlertDialog.Builder(this).setTitle(workspace.name)
             .setItems(arrayOf("打开最近学习页", "导入 PDF", "查看文件", "重命名", "移到回收站",
-                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档", "识别与批改记录", "打开画布", "新建空白页")) { _, which ->
+                if (management.pinned) "取消置顶" else "置顶", if (management.archived) "取消归档" else "归档", "识别与批改记录", "打开画布", "新建画布")) { _, which ->
                 when (which) {
                     0 -> {
                         val pdf = LearningTurn.latestReady(workspace)

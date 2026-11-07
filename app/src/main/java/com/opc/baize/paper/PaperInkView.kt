@@ -45,7 +45,8 @@ class PaperInkView(context: Context) : View(context) {
     private var eraserPosition: PointF? = null
     private var eraseBefore: List<PaperStroke>? = null
     private var selectionBefore: RectF? = null
-    private val eraserRadius = 12f
+    var eraserRadius = 12f
+        set(value) {field=value.coerceIn(1f,250f);invalidate()}
     private val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private fun cancelInteraction() {
         current.clear()
@@ -60,7 +61,7 @@ class PaperInkView(context: Context) : View(context) {
     }
     fun release() { cancelInteraction(); layerRenderer.close(); image?.recycle(); image = null }
     fun resetView() { zoom = 1f; dx = 0f; dy = 0f; invalidate() }
-    fun zoom(factor: Float) { zoom = (zoom * factor).coerceIn(1f, 5f); invalidate() }
+    fun zoom(factor: Float) { zoom = (zoom * factor).coerceIn(.1f, 20f); invalidate() }
     var historyRequest: ((Boolean)->Unit)? = null
     val canAcceptExternal: Boolean get() = activePointer == -1 && current.isEmpty() && eraseBefore == null && !selecting && !gestureSequence
     fun acceptExternal(data: PaperPage) {
@@ -81,6 +82,7 @@ class PaperInkView(context: Context) : View(context) {
         val previous = if(history.isNotEmpty()) history.removeLast() else return
         future.addLast(page); publish(previous)
     }
+    fun clearCanvas() { edit(page.copy(strokes=emptyList())) }
     fun redo() { historyRequest?.let {it(true);return}; cancelInteraction(); if(future.isNotEmpty()) { history.addLast(page); publish(future.removeLast()) } }
     private fun publish(data: PaperPage) {
         page=data.copy(revision=page.revision+1); changed?.invoke(page); invalidate()
@@ -205,7 +207,7 @@ class PaperInkView(context: Context) : View(context) {
             if (e.actionMasked == MotionEvent.ACTION_MOVE && previous != null && gestureSpan > 0f && span > 0f) {
                 val old = transform()
                 val anchorX = old.pageX(previous.x); val anchorY = old.pageY(previous.y)
-                zoom = (zoom * span / gestureSpan).coerceIn(1f, 5f)
+                zoom = (zoom * span / gestureSpan).coerceIn(.1f, 20f)
                 val fitted = PaperTransform.fit(width.coerceAtLeast(1), height.coerceAtLeast(1), page.width, page.height, zoom, 0f, 0f)
                 dx = focus.x - fitted.left - anchorX * fitted.scale
                 dy = focus.y - fitted.top - anchorY * fitted.scale

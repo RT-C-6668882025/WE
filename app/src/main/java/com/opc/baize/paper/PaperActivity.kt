@@ -148,8 +148,15 @@ class PaperActivity : Activity() {
             text = workspaceName; textSize = 17f; setTextColor(Color.rgb(58,53,44))
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         },LinearLayout.LayoutParams(0,-2,1f))
-        undoButton=button(top,"撤销") {if(canEditCanvas()) ink.undo()}.apply {isEnabled=false}
-        redoButton=button(top,"重做") {if(canEditCanvas()) ink.redo()}.apply {isEnabled=false}
+        undoButton=button(top,"删除上一步") {if(canEditCanvas()) ink.undo()}.apply {isEnabled=false}
+        redoButton=button(top,"回溯上一步") {if(canEditCanvas()) ink.redo()}.apply {isEnabled=false}
+        listOf(undoButton,redoButton).forEach {it.layoutParams=LinearLayout.LayoutParams(dp(64),dp(48));it.textSize=11f;it.maxLines=2}
+        undoButton.setOnLongClickListener {
+            if(canEditCanvas()) AlertDialog.Builder(this).setTitle("一键清空")
+                .setMessage("清空当前页笔迹和绘画，PDF 底图保留。保存后可用回溯上一步恢复。")
+                .setNegativeButton("取消",null).setPositiveButton("清空") {_,_->ink.clearCanvas()}.show()
+            true
+        }
         button(top,"页面") { showWorkspacePages() }
         button(top,"菜单") { showCanvasMenu() }
         val navigation = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
@@ -189,11 +196,24 @@ class PaperActivity : Activity() {
             else { scopeChoice.setSelection(1); chooseTool(PaperInkView.Mode.SELECT); status.text = "拖出矩形；再次点框选或轻点纸面取消。" }
         }
         modes[PaperInkView.Mode.ERASE] = button(tools,"橡皮") { chooseTool(PaperInkView.Mode.ERASE); status.text = if(ink.pixelEraser) "局部橡皮：仅擦除当前图层，可撤销。" else "整笔橡皮：仅擦除当前图层，可撤销。" }
-        button(tools,"笔刷") { if(canEditCanvas()) showBrushPanel() }
+        button(tools,"笔刷") { if(canEditCanvas()) {
+            if(ink.mode==PaperInkView.Mode.ERASE) {
+                val box=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(8),dp(16),dp(8))}
+                val label=TextView(this);box.addView(label)
+                val size=SeekBar(this).apply {max=499;progress=(ink.eraserRadius*2-1).toInt()};box.addView(size)
+                fun update() {ink.eraserRadius=(size.progress+1)/2f;label.text="橡皮直径：${size.progress+1}"}
+                size.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(b:SeekBar?,v:Int,u:Boolean) {update()}
+                    override fun onStartTrackingTouch(b:SeekBar?) {}
+                    override fun onStopTrackingTouch(b:SeekBar?) {}
+                });update()
+                AlertDialog.Builder(this).setTitle("橡皮大小").setView(box).setPositiveButton("完成",null).show()
+            } else showBrushPanel()
+        } }
         button(tools,"图层") { if(canEditCanvas()) drawingPanels().layers() }
         modes[PaperInkView.Mode.WRITE]?.setOnLongClickListener {if(canEditCanvas()) drawingPanels().tools();true}
         modes[PaperInkView.Mode.ERASE]?.setOnLongClickListener {
-            AlertDialog.Builder(this).setTitle("橡皮类型").setSingleChoiceItems(arrayOf("局部橡皮","整笔橡皮"),if(ink.pixelEraser) 0 else 1) {dialog,which ->
+            AlertDialog.Builder(this).setTitle("橡皮类型与大小").setSingleChoiceItems(arrayOf("局部橡皮","整笔橡皮"),if(ink.pixelEraser) 0 else 1) {dialog,which ->
                 ink.pixelEraser=which==0;chooseTool(PaperInkView.Mode.ERASE);dialog.dismiss()
             }.show();true
         }
@@ -201,7 +221,7 @@ class PaperActivity : Activity() {
             (tools.getChildAt(i) as Button).apply {textSize=12f;setPadding(dp(2),0,dp(2),0)}
             tools.getChildAt(i).layoutParams=LinearLayout.LayoutParams(0,dp(48),1f)
         }
-        chooseTool(PaperInkView.Mode.WRITE)
+        chooseTool(PaperInkView.Mode.MOVE)
         // Drawpile's canvas-first arrangement: one mobile strip, a narrow dock on wide windows.
         root.removeView(tools)
         val toolScroll=ScrollView(this).apply {isFillViewport=false;addView(tools)}
@@ -628,14 +648,14 @@ class PaperActivity : Activity() {
         val pages = java.io.File(workspace.root,"memory/pages").walkTopDown().maxDepth(10)
             .filter { it.isFile && it.extension.lowercase() == "pdf" }
             .sortedByDescending { it.lastModified() }.take(200).toList()
-        val labels = arrayOf("＋ 新建空白页", "导入 PDF") + pages.map { it.relativeTo(java.io.File(workspace.root,"memory/pages")).path }
+        val labels = arrayOf("＋ 新建画布", "导入 PDF") + pages.map { it.relativeTo(java.io.File(workspace.root,"memory/pages")).path }
         AlertDialog.Builder(this).setTitle("${workspace.name} · 页面").setItems(labels) { _,which ->
             when (which) {
                 0 -> scope.launch {
                     try {
                         val page = withContext(Dispatchers.IO) { WorkspaceDrawing.open(workspace,true) }
                         openGenerated(page.pdf,workspace.id,page.sourcePath)
-                    } catch (e: Exception) { status.text = "新建页面失败：${e.message}" }
+                    } catch (e: Exception) { status.text = "新建画布失败：${e.message}" }
                 }
                 1 -> importPdf()
                 else -> pages[which-2].let { openGenerated(it,workspace.id,WorkspaceDrawing.sourcePath(workspace,it)) }
@@ -672,8 +692,8 @@ class PaperActivity : Activity() {
                         }
                     }
                 }
-                4->options("AI 与工作区",arrayOf("工作区对话","AI 模型设置")) {index->
-                    if(index==0) workspaceId?.let {startActivity(Intent(this,AgentWorkspaceActivity::class.java).putExtra("workspace",it))}
+                4->options("AI 与工作区",arrayOf("AI 对话面板","AI 模型设置")) {index->
+                    if(index==0) workspaceId?.let {startActivity(Intent(this,AgentWorkspaceActivity::class.java).putExtra("workspace",it).putExtra("canvasPanel",true))}
                     else startActivity(Intent(this,com.opc.baize.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openSettings",true))
                 }
                 5->AlertDialog.Builder(this).setTitle("操作说明").setMessage("双指移动与缩放，菜单可居中显示。\n单指使用当前工具；按钮显示选中的形状或橡皮类型。长按画笔打开工具，长按橡皮切换类型。\n顶部撤销／重做；页面入口新建、导入、切换。\n笔刷预设在菜单的“视图与笔刷”；图层面板管理显示和锁定。\n再次点击框选取消选区。\nAI 按钮设置范围、指令和自动识别；发送后可停止。\n笔迹自动保存；失败时保留页面，重试后再退出。")
